@@ -1,0 +1,13 @@
+# Rust client
+client/target/
+
+# Go server
+server/bin/
+
+# Local world saves
+saves/
+
+# Editor and OS
+.idea/
+.vscode/
+.DS_Store
