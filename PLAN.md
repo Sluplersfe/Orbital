@@ -187,7 +187,7 @@ services:
 | Phase | Scope | Gate to leave the phase |
 | --- | --- | --- |
 | 0. Prototype | Rust orbit math and 64-bit vessel sim, plain rendering, one ship, no UI polish | A rocket reaches orbit, and the Rust and Go orbit modules match on every shared test vector |
-| 1. Single-player slice | Builder with delta-v readout, basic cockpit, Eras 1-2, flight reports, research points | Playtesters who have never seen the game reach orbit within an hour, and say why failures happened |
+| 1. Single-player slice | Builder with delta-v readout, basic cockpit, Eras 1-2, flight reports, research points | Reaching orbit is possible within an hour, and each failure produces a flight report that explains it. Playtesting is optional here (see [PHASES.md](PHASES.md)) |
 | 2. Co-op foundation | Go server, shared protobuf schema, join tokens, pilot-owned ships, host and handoff, crew roles, `hermes` deployment | 4+ players fly for 30 minutes on `hermes`, a forced host handoff causes no ship jump, and an empty server freezes the clock |
 | 3. Stations and Moon | Docking, station modules, refueling, surveying, resource claims, employees, life support and farms, Eras 3-4 | A group builds a station, refuels a ship there, lands on the Moon and claims a resource |
 | 4. Planets and content | Era 5, invented planets, nuclear and ion engines, tech tree balance, contracts, instrument upgrades | A full playthrough from Era 1 to a planet claim has no dead ends, and balance playtests pass |

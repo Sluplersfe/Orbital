@@ -13,3 +13,5 @@ Completed:
 - [x] Add `CLAUDE.md` and `AGENTS.md` with the git workflow and check commands
 - [x] Commit the bootstrap and push it to the `bootstrap` branch
 - [x] Add `PHASES.md` and `TODO.md`, and point the agent instructions at them
+- [x] Verify the client opens the window and the server binds 4004 and 4005
+- [x] Align the PLAN.md phase 1 gate with PHASES.md (playtesting optional)

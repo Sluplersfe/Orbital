@@ -17,5 +17,5 @@ The other option is to hold all playtesting after phase 4 is complete: playteste
 
 ## Status
 
-- Phase 1 (Bootstrapping): in progress. Tracked in [TODO.md](TODO.md).
+- Phase 1 (Bootstrapping): complete. Gate met: client opens the window, server binds 4004 and 4005, bootstrap branch pushed. Tracked in [TODO.md](TODO.md).
 - Phases 2-4: not started.
