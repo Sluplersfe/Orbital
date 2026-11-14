@@ -1,9 +1,15 @@
 # Orbital: notes for Claude
 
-Orbital is a co-op PC space program sandbox. The design lives in [PLAN.md](PLAN.md). Layout and build commands are in [README.md](README.md).
+Orbital is a co-op PC space program sandbox. The design lives in [PLAN.md](PLAN.md). Layout and build commands are in [README.md](README.md). The phases are in [PHASES.md](PHASES.md) and the task list is in [TODO.md](TODO.md).
 
 - `client/`: Rust + Bevy game client
 - `server/`: Go dedicated server
+
+## Tracking
+
+- [PHASES.md](PHASES.md) lists the four phases and their gates. Update its status section when a phase starts or passes its gate.
+- [TODO.md](TODO.md) tracks the current phase. When you finish a task, tick it off or add it under Completed. When a phase changes, move its items to a new section.
+- Keep both files in sync with the work in the same commit.
 
 ## Git workflow
 
