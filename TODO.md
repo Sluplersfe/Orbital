@@ -2,6 +2,24 @@
 
 Tracks the work for the current phase. See [PHASES.md](PHASES.md) for the phase list and gates.
 
+## Phase 3: Co-op foundation
+
+Completed:
+
+- [x] Go orbit module (`server/internal/orbit`) against the shared test vectors
+- [x] Join tokens, player roster, host election (earliest-joined healthy) and world clock that freezes when empty (`server/internal/session`)
+- [x] Shared protobuf schema draft (`proto/orbital.proto`)
+
+Open:
+
+- [ ] Wire sessions into the TCP lobby and UDP state relay in `orbital-server`
+- [ ] Generate Rust and Go types from the schema in CI
+- [ ] Pilot-owned ships, seat claims and crew roles
+- [ ] Host handoff snapshot flow and client networking
+- [ ] Dockerfile and Compose for `hermes`, port forwarding
+- [ ] Decide the playtesting approach and record it in PHASES.md
+- [ ] Gate: 4+ players fly 30 minutes on `hermes`, forced handoff causes no ship jump, empty server freezes the clock
+
 ## Phase 2: Single-player slice
 
 Completed:
@@ -17,9 +35,7 @@ Completed:
 
 Open:
 
-- [ ] Decide the playtesting approach and record it in PHASES.md (needed before phase 3)
 - [ ] Save and load progress to disk (not required by the gate)
-- [ ] Write the Go orbit module against the shared test vectors (phase 3 server work)
 
 ## Phase 1: Bootstrapping
 

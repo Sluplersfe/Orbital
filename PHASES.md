@@ -19,4 +19,5 @@ The other option is to hold all playtesting after phase 4 is complete: playteste
 
 - Phase 1 (Bootstrapping): complete. Gate met: client opens the window, server binds 4004 and 4005, bootstrap branch pushed. Tracked in [TODO.md](TODO.md).
 - Phase 2 (Single-player slice): complete. Gate met headlessly: `cargo test` flies a scripted ascent to a stable orbit in about 10 minutes of flight time, and every failure mode tested (never lifted, max-Q, crash) produces a diagnosing flight report. The playtesting choice above is still unrecorded and needs a decision before phase 3.
-- Phases 3-4: not started.
+- Phase 3 (Co-op foundation): in progress. Done so far: Go orbit module, join tokens, host election, clock freeze (unit tested), schema draft. Networking, crew roles and `hermes` deployment remain.
+- Phase 4: not started.

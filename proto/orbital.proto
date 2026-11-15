@@ -1,0 +1,46 @@
+// Shared wire schema for client (Rust) and server (Go). Code generation is not wired up yet.
+syntax = "proto3";
+package orbital;
+
+message Vec3d { double x = 1; double y = 2; double z = 3; }
+
+message Join { string token = 1; }
+
+message JoinAck {
+  bool ok = 1;
+  string error = 2;
+  string host = 3;       // current host player
+  double world_time = 4; // seconds
+}
+
+message Elements { // orbital elements for an on-rails ship
+  double a = 1; double e = 2; double inclination = 3;
+  double raan = 4; double arg_periapsis = 5; double mean_anomaly = 6; double epoch = 7;
+}
+
+message ShipState { // pilot-authoritative, sent over UDP
+  uint64 ship_id = 1;
+  string pilot = 2;
+  Vec3d position = 3;
+  Vec3d velocity = 4;
+  double sim_time = 5;
+}
+
+message HostSnapshot { // handed to the next host on handoff
+  double world_time = 1;
+  repeated Elements rails = 2;
+  repeated uint64 rail_ship_ids = 3;
+}
+
+message HostChange { string new_host = 1; HostSnapshot snapshot = 2; }
+
+enum CrewRole { PILOT = 0; NAVIGATOR = 1; FLIGHT_ENGINEER = 2; MISSION_SPECIALIST = 3; }
+
+message SeatClaim { uint64 ship_id = 1; CrewRole role = 2; }
+
+message Envelope {
+  oneof msg {
+    Join join = 1; JoinAck join_ack = 2; ShipState ship_state = 3;
+    HostChange host_change = 4; SeatClaim seat_claim = 5;
+  }
+}
