@@ -211,3 +211,16 @@ fn the_tech_tree_has_no_dead_ends() {
         }
     }
 }
+
+/// A body that holds resources can actually be surveyed: land on a bare surface, or look from orbit.
+#[test]
+fn every_resource_body_can_be_surveyed() {
+    use orbital_client::bodies::{self, SurveyFrom};
+    for b in bodies::bodies().iter().filter(|b| !b.resources.is_empty()) {
+        match b.survey {
+            SurveyFrom::Surface => assert!(!b.has_atmosphere(), "{} must be surveyed from the ground but has an atmosphere", b.id),
+            SurveyFrom::Orbit => {}
+        }
+        assert!(b.min_era >= 4, "{} is surveyable too early", b.id);
+    }
+}

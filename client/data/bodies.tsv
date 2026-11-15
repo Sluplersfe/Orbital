@@ -11,6 +11,6 @@ vesta     Vesta     sun     1.7288e10        2.627e5     3.5339e11            3.
 jupiter   Jupiter   sun     1.26686534e17    6.9911e7    7.7857e11            1.76e-4       0      1        0         21600      orbit    2000000  5  helium3,exotic
 neptune   Neptune   sun     6.8365e15        2.4622e7    4.4951e12            1.08e-4       0      1        0         43200      orbit    1000000  5  exotic
 # Invented planets beyond Neptune (see PLAN.md); the real bodies are left as they are.
-tycho     Tycho     sun     1.89e14          5.2e6       6.73e12              6.1e-5        0.4    9000     60000     64800      surface  200000  5  metals,water_ice,platinum,exotic
+tycho     Tycho     sun     1.89e14          5.2e6       6.73e12              6.1e-5        0.4    9000     60000     64800     orbit    200000  5  metals,water_ice,platinum,exotic
 ymir      Ymir      sun     2.5e16           4.0e7       1.077e13             1.4e-4        0      1        0         86400      orbit    1500000  5  helium3,exotic
 halla     Halla     ymir    5.5e12           1.8e6       9.0e8                4.2e-5        0      1        0         90000      surface  100000  5  metals,water_ice,silicon,exotic

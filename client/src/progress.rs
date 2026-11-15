@@ -11,6 +11,8 @@ pub struct Progress {
     pub milestones: BTreeSet<&'static str>,
     /// Resources claimed by being there. Shared by every player; a claim unlocks parts.
     pub claims: BTreeSet<String>,
+    /// First-time awards not yet reported to a co-op server: (key, points).
+    pub new_awards: Vec<(&'static str, u32)>,
 }
 
 pub const ERA_NAMES: [&str; 5] = ["Suborbital", "Orbit", "Stations", "Moon and asteroids", "Planets"];
@@ -19,7 +21,7 @@ impl Progress {
     pub fn new() -> Self {
         let unlocked = parts::catalog().iter().filter(|p| p.cost_rp == 0 && p.requires.is_empty() && p.claim.is_none())
             .map(|p| p.id.to_string()).collect();
-        Self { rp: 0, unlocked, milestones: BTreeSet::new(), claims: BTreeSet::new() }
+        Self { rp: 0, unlocked, milestones: BTreeSet::new(), claims: BTreeSet::new(), new_awards: vec![] }
     }
 
     /// Current era. Each era's goal opens the next: recover from space (2), reach orbit (3),
@@ -84,6 +86,7 @@ impl Progress {
             return None;
         }
         self.rp += pts;
+        self.new_awards.push((key, pts));
         Some(format!("+{pts} first {label}"))
     }
 
@@ -116,6 +119,7 @@ impl Progress {
         let mut why = vec![];
         let mut add = |p: &mut Progress, key: &'static str, n: u32, label: &str| {
             if p.milestones.insert(key) {
+                p.new_awards.push((key, n));
                 pts += n;
                 why.push(format!("+{n} first {label}"));
             }

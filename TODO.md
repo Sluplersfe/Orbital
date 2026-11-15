@@ -2,6 +2,32 @@
 
 Tracks the work for the current phase. See [PHASES.md](PHASES.md) for the phase list and gates.
 
+## Phase 4: Stations, Moon and planets
+
+Completed:
+
+- [x] Orbit spaces per body, patched-conic transfers with a designed `transit_s`, and `Spacecraft::from_flight` circularisation
+- [x] Rendezvous: Hohmann to a 3 km standoff, Clohessy-Wiltshire approach, drift-orbit phasing for close orbits
+- [x] Docking, station modules (core, habitat, farm, depot, bay), power, life support and brownout, refuelling, assembly
+- [x] Moon landing and take-off autopilots (`Descent`, `Takeoff`); crashes produce a diagnosing report
+- [x] Crewed surveys claim resources; probes earn RP only; claims unlock ISRU and NERVA
+- [x] Employees, Eras 3-5, body `min_era`, the invented bodies Tycho, Ymir and Halla
+- [x] Tech tree and research rebalance so Era 1 pays for the first orbit and a station
+- [x] Shared research on the wire: proto, Go server (`TestSharedProgram`), Rust client (`net.rs`, `tests/coop.rs`)
+- [x] Mission control view (`M`) and online hooks in the client
+- [x] Gate playthrough `client/tests/phase4.rs`, run headlessly
+
+Open:
+
+- [ ] Do not redeploy to `hermes` yet: the proto changed, and the deployed server would not match the new client
+- [ ] Play it by hand: the Bevy GUI and mission control have never been run, and the phase 4 gate has only been checked headlessly
+- [ ] Share stations and ships over the wire (`HostSnapshot.stations` is still opaque bytes)
+- [ ] Manual lunar piloting UI (landing and take-off use autopilots)
+- [ ] A lander return trip or Moon ISRU: the test lander falls 1.4-2.3 km/s short of coming home, and the crew is rescued by teleport
+- [ ] Fly the other bodies (only the Moon and Mars are flown in tests; the rest are covered by the tech-tree closure test)
+- [ ] Tune costs, masses and transit times from real play
+- [ ] Phase 3 leftovers below, including its gate
+
 ## Phase 3: Co-op foundation
 
 Completed:
