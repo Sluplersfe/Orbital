@@ -50,8 +50,44 @@ pub fn circular_speed(mu: f64, r: f64) -> f64 {
     (mu / r).sqrt()
 }
 
+/// Advance a bound two-body state by dt seconds (f and g functions in the change of eccentric
+/// anomaly). This is how on-rails ships move; it mirrors orbit.Propagate in Go.
+pub fn propagate(mu: f64, r0: DVec3, v0: DVec3, dt: f64) -> (DVec3, DVec3) {
+    let rn = r0.length();
+    let a = 1.0 / (2.0 / rn - v0.length_squared() / mu);
+    let sqa = a.sqrt();
+    let sig = r0.dot(v0) / mu.sqrt();
+    let n = (mu / (a * a * a)).sqrt();
+    let m = (n * dt) % std::f64::consts::TAU;
+    let mut de = m;
+    for _ in 0..60 {
+        let (s, c) = de.sin_cos();
+        let f = de + sig / sqa * (1.0 - c) - (1.0 - rn / a) * s - m;
+        let d = f / (1.0 + sig / sqa * s - (1.0 - rn / a) * c);
+        de -= d;
+        if d.abs() < 1e-14 {
+            break;
+        }
+    }
+    let (s, c) = de.sin_cos();
+    let r = a + (rn - a) * c + sig * sqa * s;
+    let f = 1.0 - a / rn * (1.0 - c);
+    let g = m / n - (a * a * a / mu).sqrt() * (de - s);
+    let fd = -(mu * a).sqrt() / (r * rn) * s;
+    let gd = 1.0 - a / r * (1.0 - c);
+    (r0 * f + v0 * g, r0 * fd + v0 * gd)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn propagate_shared_vector() {
+        // Shared with server/internal/orbit: r0=(7e6,0,0), v0=(0,7800,1000), dt=1234 s.
+        let (r, _) = propagate(MU, DVec3::new(7e6, 0.0, 0.0), DVec3::new(0.0, 7800.0, 1000.0), 1234.0);
+        let want = DVec3::new(1800978.2209196573, 7167400.1039350107, 918897.44922243722);
+        assert!((r - want).length() < 1e-4, "{r:?}");
+    }
+
     use super::*;
     use crate::{MU, R_EARTH};
 

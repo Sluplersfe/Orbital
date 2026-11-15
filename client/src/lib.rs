@@ -1,5 +1,6 @@
 //! Orbital client core: pure, headless game logic (64-bit physics), no rendering.
 pub mod autopilot;
+pub mod net;
 pub mod orbit;
 pub mod parts;
 pub mod progress;

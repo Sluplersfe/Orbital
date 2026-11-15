@@ -1,0 +1,45 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: server/go.mod }
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Check generated Go code is up to date
+        working-directory: server
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
+          make proto
+          git diff --exit-code internal/pb
+      - name: Vet, test, build
+        working-directory: server
+        run: |
+          go vet ./...
+          go test -race ./...
+          go build -o bin/orbital-server ./cmd/orbital-server
+      - uses: actions/upload-artifact@v4
+        with: { name: orbital-server, path: server/bin/orbital-server }
+
+  client:
+    runs-on: ubuntu-latest
+    needs: server
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install protoc and Bevy system deps
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: client }
+      - uses: actions/download-artifact@v4
+        with: { name: orbital-server, path: server/bin }
+      - name: Check and test (includes the Rust-to-Go co-op test)
+        working-directory: client
+        run: |
+          chmod +x ../server/bin/orbital-server
+          cargo check
+          cargo test

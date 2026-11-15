@@ -173,12 +173,12 @@ services:
       - ./saves:/data/saves
 ```
 
-- [ ] Multi-stage Dockerfile: build a static Go binary in a golang image, run it in a minimal image as a non-root user
-- [ ] Shared protobuf schema in the repo, with Go and Rust code generated from it in CI
+- [x] Multi-stage Dockerfile: build a static Go binary in a golang image, run it in a minimal image as a non-root user
+- [x] Shared protobuf schema in the repo, with Go and Rust code generated from it in CI
 - [ ] Forward 4004/tcp and 4005/udp from the router to `hermes`, and allow them in the host firewall
 - [ ] Persist world saves in the mounted volume and back them up
 - [ ] Save the world clock with the world, and stop it when the last player leaves
-- [ ] Require a join token or allowlist, since the ports are open to the internet
+- [x] Require a join token or allowlist, since the ports are open to the internet
 - [ ] Rate-limit and size-check every client message
 - [ ] Log rotation and a health check so the container restarts cleanly
 

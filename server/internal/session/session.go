@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -47,32 +50,63 @@ func newWithClock(now func() time.Time) *Session {
 
 // IssueToken creates a join token for a trusted player name.
 func (s *Session) IssueToken(name string) string {
+	tok := NewToken()
+	s.AddToken(name, tok)
+	return tok
+}
+
+// AddToken trusts an existing token for a player name.
+func (s *Session) AddToken(name, tok string) {
+	s.mu.Lock()
+	s.tokens[tok] = name
+	s.mu.Unlock()
+}
+
+// LoadTokens reads a tokens file: one "name token" pair per line, # comments allowed.
+func (s *Session) LoadTokens(path string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		f := strings.Fields(line)
+		if len(f) == 0 || strings.HasPrefix(f[0], "#") {
+			continue
+		}
+		if len(f) != 2 {
+			return n, fmt.Errorf("%s: bad line %q", path, line)
+		}
+		s.AddToken(f[0], f[1])
+		n++
+	}
+	return n, nil
+}
+
+// NewToken returns a random join token.
+func NewToken() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}
-	tok := hex.EncodeToString(b)
-	s.mu.Lock()
-	s.tokens[tok] = name
-	s.mu.Unlock()
-	return tok
+	return hex.EncodeToString(b)
 }
 
 // Join admits a player with a valid token. The world clock starts when the first player joins.
-func (s *Session) Join(token string) (*Player, error) {
+func (s *Session) Join(token string) (Player, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	name, ok := s.tokens[token]
 	if !ok {
-		return nil, ErrBadToken
+		return Player{}, ErrBadToken
 	}
 	if _, dup := s.players[name]; dup {
-		return nil, ErrNameInUse
+		return Player{}, ErrNameInUse
 	}
 	s.advance()
 	p := &Player{Name: name, Joined: s.now()}
 	s.players[name] = p
-	return p, nil
+	return *p, nil
 }
 
 func (s *Session) Leave(name string) {

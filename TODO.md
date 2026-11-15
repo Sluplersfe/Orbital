@@ -10,15 +10,25 @@ Completed:
 - [x] Join tokens, player roster, host election (earliest-joined healthy) and world clock that freezes when empty (`server/internal/session`)
 - [x] Shared protobuf schema draft (`proto/orbital.proto`)
 
+- [x] Rails propagator (`orbit::propagate` / `orbit.Propagate`) with a shared test vector, checked against RK4
+- [x] Server relay (`server/internal/server`): TCP lobby with length-prefixed envelopes, UDP pilot-state relay with per-session keys and sanity checks
+- [x] Pilot-owned ships, seat claims and crew roles (one player per role per ship)
+- [x] Host election from measured ping RTT and loss, HostChange broadcast with a server-cached snapshot (survives abrupt host death)
+- [x] Unpiloted ships go on rails when in stable orbit, otherwise freeze
+- [x] Tokens file plus `orbital-server token NAME`
+- [x] Rust client networking (`client/src/net.rs`) and opt-in co-op in the game (`ORBITAL_SERVER`, `ORBITAL_TOKEN`); time warp disabled online
+- [x] Codegen: prost via `build.rs`, Go via `make proto`; CI workflow checks generated code, runs tests
+- [x] Dockerfile and `deploy/compose.yaml`, image builds locally
+- [x] Automated gate checks: Go 4-client test (forced handoff, no rails jump, empty clock freeze) and a Rust-to-Go test
+
 Open:
 
-- [ ] Wire sessions into the TCP lobby and UDP state relay in `orbital-server`
-- [ ] Generate Rust and Go types from the schema in CI
-- [ ] Pilot-owned ships, seat claims and crew roles
-- [ ] Host handoff snapshot flow and client networking
-- [ ] Dockerfile and Compose for `hermes`, port forwarding
+- [ ] Deploy to `hermes`, forward 4004/tcp and 4005/udp, open the firewall (needs your go-ahead)
+- [ ] Run the real gate: 4+ players fly 30 minutes on `hermes`
+- [ ] Crew-role consoles in the client (navigator, flight engineer, mission specialist views); roles exist on the wire only
+- [ ] Rate-limit client messages; tune host health thresholds (150 ms / 5% are guesses)
+- [ ] Persist the world clock and rails with the world save
 - [ ] Decide the playtesting approach and record it in PHASES.md
-- [ ] Gate: 4+ players fly 30 minutes on `hermes`, forced handoff causes no ship jump, empty server freezes the clock
 
 ## Phase 2: Single-player slice
 
