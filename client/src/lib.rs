@@ -5,8 +5,11 @@ pub mod net;
 pub mod orbit;
 pub mod parts;
 pub mod progress;
+pub mod rendezvous;
 pub mod report;
 pub mod sim;
+pub mod space;
+pub mod station;
 pub mod vessel;
 
 pub const G0: f64 = 9.80665;

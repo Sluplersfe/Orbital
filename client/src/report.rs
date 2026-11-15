@@ -13,6 +13,8 @@ pub enum Outcome {
     Crashed,
     NeverLaunched,
     Aborted,
+    /// Landed on another body, or came down from orbit safely.
+    Landed,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +35,9 @@ pub struct FlightReport {
 
 impl FlightReport {
     pub fn from_flight(f: &Flight) -> Self {
+        if f.body.id != "earth" || f.from_orbit {
+            return Self::lander_report(f);
+        }
         let dv_design = f.vessel.total_dv();
         let mut d: Vec<String> = vec![];
         let orbit = f.reached_orbit.then(|| (f.peri_alt(), f.apo_alt()));
@@ -147,6 +152,57 @@ impl FlightReport {
             d.push("No fault found. Good flight.".into());
         }
 
+        let timeline = f.events.iter().map(|e| format!("T+{:>5.0}s  {:>6.1} km  {}", e.t, e.alt / 1e3, e.msg)).collect();
+        Self {
+            outcome, headline, diagnosis: d, timeline,
+            max_alt: f.max_alt, max_speed: f.max_speed, max_q: f.max_q, dv_used: f.dv_used,
+            dv_design, duration: f.t, orbit,
+        }
+    }
+}
+
+impl FlightReport {
+    /// Reports for flights away from the Earth pad: descents from orbit, landings on other
+    /// bodies and ascents from them.
+    fn lander_report(f: &Flight) -> Self {
+        let b = f.body;
+        let dv_design = f.vessel.total_dv();
+        let mut d: Vec<String> = vec![];
+        let orbit = f.reached_orbit.then(|| (f.peri_alt(), f.apo_alt()));
+        let (outcome, headline) = match f.status {
+            Status::Landed { speed } if f.from_orbit => (Outcome::Landed, format!("Landed on {} at {:.1} m/s", b.name, speed)),
+            Status::Landed { speed } => (Outcome::Landed, format!("Touched down on {} at {:.1} m/s", b.name, speed)),
+            Status::Crashed { speed } => (Outcome::Crashed, format!("Crashed into {} at {:.0} m/s", b.name, speed)),
+            Status::BrokeUp { part, .. } => (Outcome::BrokeUp, format!("Vessel broke apart: {part} failed at max-Q")),
+            _ if f.reached_orbit && !f.from_orbit => (Outcome::Orbit, format!("Orbit achieved over {}: {:.0} x {:.0} km", b.name, f.peri_alt() / 1e3, f.apo_alt() / 1e3)),
+            _ if f.status == Status::OnPad || f.liftoff_twr < 0.0 => (Outcome::NeverLaunched, format!("Never left the surface of {}", b.name)),
+            _ => (Outcome::Aborted, "Flight ended".into()),
+        };
+        match f.status {
+            Status::Crashed { speed } => {
+                let g = b.surface_gravity();
+                d.push(format!("Impact speed was {speed:.0} m/s; a safe touchdown is under {:.0} m/s.", crate::sim::SAFE_LANDING));
+                if let Some(e) = f.events.iter().find(|e| e.msg.contains("out of propellant")) {
+                    d.push(format!("The last stage ran dry at {:.1} km altitude, {:.0} s into the descent. Landing from a {:.0} km orbit needs about {:.0} m/s of delta-v.",
+                        e.alt / 1e3, e.t, b.park_alt / 1e3, crate::bodies::landing_dv(b, b.park_radius())));
+                } else if f.throttle == 0.0 || f.dv_used < 50.0 {
+                    d.push("The engine was never lit to slow the descent. Burn retrograde to lose orbital speed first.".into());
+                } else {
+                    let a = f.vessel.stage_engines(f.stage).0 * 1000.0 / f.mass();
+                    d.push(format!("Braking started too late for the engine: thrust gives {:.1} m/s^2 against {:.2} m/s^2 of gravity. Light the engine higher, or use a higher thrust-to-weight lander.", a, g));
+                }
+                if b.has_atmosphere() && !f.chute_deployed {
+                    d.push(format!("{} has an atmosphere; a parachute helps shed speed before the final burn.", b.name));
+                }
+            }
+            Status::Landed { .. } => d.push(format!("Used {:.0} m/s of {:.0} m/s design delta-v.", f.dv_used, dv_design)),
+            _ if outcome == Outcome::NeverLaunched => d.push(format!("Liftoff needs thrust-to-weight above 1 against {:.2} m/s^2 of gravity here.", b.surface_gravity())),
+            _ if outcome == Outcome::Orbit => d.push(format!("Used {:.0} m/s of {:.0} m/s design delta-v.", f.dv_used, dv_design)),
+            _ => {}
+        }
+        if d.is_empty() {
+            d.push("No fault found.".into());
+        }
         let timeline = f.events.iter().map(|e| format!("T+{:>5.0}s  {:>6.1} km  {}", e.t, e.alt / 1e3, e.msg)).collect();
         Self {
             outcome, headline, diagnosis: d, timeline,

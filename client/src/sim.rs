@@ -97,6 +97,20 @@ impl Flight {
         Self::init(body, vessel, pos, DVec3::ZERO, 0, prop, true)
     }
 
+    /// Sit on the surface of `body` at longitude `lon` (rad) with the given stage state, ready to
+    /// lift off (a ship that landed and wants to come home).
+    pub fn on_surface(body: &'static Body, vessel: Vessel, stage: usize, prop: f64, lon: f64) -> Self {
+        let pos = DVec3::new(lon.cos(), lon.sin(), 0.0) * body.radius;
+        let mut f = Self::init(body, vessel, pos, DVec3::ZERO, stage, prop, true);
+        f.from_orbit = false;
+        f
+    }
+
+    /// Local surface gravity (m/s^2); Earth uses the standard g0 the builder shows.
+    pub fn local_g(&self) -> f64 {
+        if self.body.id == "earth" { G0 } else { self.body.surface_gravity() }
+    }
+
     /// Start flying in space over `body` from an orbital state (a ship leaving a station, or one
     /// arriving at the Moon). `stage` and `prop` say how much of the vessel is left.
     pub fn in_space(body: &'static Body, vessel: Vessel, stage: usize, prop: f64, pos: DVec3, vel: DVec3) -> Self {
@@ -265,7 +279,7 @@ impl Flight {
         }
 
         if self.status == Status::OnPad {
-            let twr = thrust / (mass * G0);
+            let twr = thrust / (mass * self.local_g());
             if twr <= 1.0 {
                 self.t += dt;
                 if thrust > 0.0 && self.liftoff_twr == 0.0 {
