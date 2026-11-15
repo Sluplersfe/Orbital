@@ -72,6 +72,8 @@ The client is authoritative, and each thing has one owner. Every player sends th
 
 **Who simulates what.** A piloted ship is simulated by its pilot's client, which is authoritative for it. Everything nobody is piloting (the world clock, coasting ships, stations and their life support) is run by one host client, the earliest-joined player with a healthy connection (latency and packet-loss thresholds). Unpiloted ships are on rails, described by orbital elements, so the host's state is small. A host handoff is a snapshot of the clock and station state, and no ship jumps because no ship's position depends on the host. If a pilot disconnects, an orbiting ship goes on rails and any other ship is frozen in place until a player takes the seat.
 
+*As built in phase 3:* the server owns the world clock and the rails table (each rails ship is a state vector at an epoch, propagated by the shared Kepler code), so a handoff cannot move a ship by construction. The host's remaining job is station state (phase 4), which it uploads in `HostSnapshot` and the server hands to the next host.
+
 **No time warp.** The game runs in real time. The world clock advances only while at least one player is online, and it stops when everyone is offline, so nothing happens to ships, farms or food while the server is empty.
 
 ## Rocket design and flight systems

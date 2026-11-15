@@ -166,6 +166,9 @@ func (s *Server) handleConn(c net.Conn) {
 	log.Printf("join %s (host %s)", p.Name, host)
 
 	for {
+		// Live clients answer every ping, so silence this long means the link is dead
+		// (no FIN after Wi-Fi loss or sleep). Dropping them unfreezes rails and the clock.
+		c.SetReadDeadline(time.Now().Add(10 * s.cfg.PingInterval))
 		env, err := readFrame(c)
 		if err != nil {
 			break
@@ -222,6 +225,10 @@ func (s *Server) handle(cl *client, env *pb.Envelope) error {
 			return errors.New("not seated on that ship")
 		}
 		s.releaseSeat(cl.name, sh.id)
+		// An explicit release ends the flight: a ship that is not orbiting is done with.
+		if sh.frozen && len(sh.seats) == 0 {
+			delete(s.ships, sh.id)
+		}
 		s.broadcastRoster()
 	case *pb.Envelope_HostSnapshot:
 		if cl.name != s.host {

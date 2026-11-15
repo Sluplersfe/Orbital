@@ -15,7 +15,7 @@ jobs:
         run: |
           go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
           make proto
-          git diff --exit-code internal/pb
+          git diff --exit-code -I "^// \s*protoc " internal/pb
       - name: Vet, test, build
         working-directory: server
         run: |

@@ -209,3 +209,52 @@ func TestCoopGate(t *testing.T) {
 		t.Fatalf("clock ran while empty: %v -> %v", c0, c1)
 	}
 }
+
+func TestSilentClientDropped(t *testing.T) {
+	sess := session.New()
+	s, err := Listen(Config{TCPAddr: "127.0.0.1:0", UDPAddr: "127.0.0.1:0", PingInterval: 10 * time.Millisecond, Session: sess})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Serve()
+	defer s.Close()
+	live := dial(t, s, sess.IssueToken("live"))
+	tok := sess.IssueToken("ghost")
+	c, _ := net.Dial("tcp", s.TCPAddr().String())
+	defer c.Close()
+	writeFrame(c, &pb.Envelope{Msg: &pb.Envelope_Join{Join: &pb.Join{Token: tok}}})
+	readFrame(c)
+	// ghost never reads or answers pings, as after a silent link loss.
+	live.roster(func(r *pb.Roster) bool { return len(r.Players) == 2 })
+	live.roster(func(r *pb.Roster) bool { return len(r.Players) == 1 })
+	if _, err := sess.Join(tok); err != nil {
+		t.Fatalf("ghost cannot rejoin: %v", err)
+	}
+}
+
+func TestEndedFlightRemovesGroundedShip(t *testing.T) {
+	sess := session.New()
+	s, _ := Listen(Config{TCPAddr: "127.0.0.1:0", UDPAddr: "127.0.0.1:0", Session: sess})
+	s.Serve()
+	defer s.Close()
+	a := dial(t, s, sess.IssueToken("ann"))
+	claim(a, 0, pb.CrewRole_CREW_ROLE_PILOT)
+	a.roster(func(r *pb.Roster) bool { return shipByID(r, 1) != nil })
+	a.sendUDP(&pb.ShipState{ShipId: 1, Position: &pb.Vec3D{X: orbit.REarth}, Velocity: &pb.Vec3D{}})
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		s.mu.Lock()
+		ok := s.ships[1] != nil && s.ships[1].last != nil
+		s.mu.Unlock()
+		if ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("state never arrived")
+		}
+		a.sendUDP(&pb.ShipState{ShipId: 1, Position: &pb.Vec3D{X: orbit.REarth}, Velocity: &pb.Vec3D{}})
+		time.Sleep(5 * time.Millisecond)
+	}
+	a.send(&pb.Envelope{Msg: &pb.Envelope_SeatRelease{SeatRelease: &pb.SeatRelease{ShipId: 1}}})
+	a.roster(func(r *pb.Roster) bool { return len(r.Ships) == 0 })
+}

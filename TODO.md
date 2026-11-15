@@ -28,6 +28,8 @@ Open:
 - [ ] Crew-role consoles in the client (navigator, flight engineer, mission specialist views); roles exist on the wire only
 - [ ] Rate-limit client messages; tune host health thresholds (150 ms / 5% are guesses)
 - [ ] Persist the world clock and rails with the world save
+- [ ] Shared launch frame: each flight starts at inertial (R_EARTH, 0, 0) regardless of world time, so ships launched at different times are not consistently placed; rotate the pad with Earth by world time
+- [ ] Play the in-game co-op path by hand (only the headless Rust and Go tests have run)
 - [ ] Decide the playtesting approach and record it in PHASES.md
 
 ## Phase 2: Single-player slice
