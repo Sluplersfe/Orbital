@@ -105,6 +105,10 @@ impl Progress {
         };
         if r.max_alt >= 1_000.0 { add(self, "liftoff", 5, "liftoff"); }
         if r.max_alt >= 30_000.0 { add(self, "high_alt", 10, "flight above 30 km"); }
+        if r.max_speed >= 400.0 { add(self, "supersonic", 5, "supersonic flight"); }
+        if r.max_alt >= 60_000.0 { add(self, "alt_60", 10, "flight above 60 km"); }
+        if r.max_speed >= 2_000.0 { add(self, "fast", 10, "flight above 2 km/s"); }
+        if matches!(r.outcome, Outcome::SpaceRecovered) { add(self, "recovered", 10, "safe recovery from space"); }
         if r.max_alt >= crate::SPACE_ALT { add(self, "space", 25, "trip to space"); }
         if matches!(r.outcome, Outcome::SpaceRecovered | Outcome::Orbit) && r.duration > 0.0 {
             if r.outcome == Outcome::SpaceRecovered { add(self, "space_recovered", 30, "space flight recovered"); }

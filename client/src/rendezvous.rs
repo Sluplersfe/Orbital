@@ -14,6 +14,10 @@ pub const STANDOFF: f64 = 3_000.0;
 /// A docking port captures within this distance (m) and relative speed (m/s).
 pub const DOCK_RANGE: f64 = 20.0;
 pub const DOCK_SPEED: f64 = 0.5;
+/// Longest we will wait for the transfer window before parking in a drift orbit first (s).
+const MAX_WAIT_S: f64 = 6.0 * 3600.0;
+/// Most delta-v a drift orbit may cost (both burns, m/s).
+const MAX_DRIFT_DV: f64 = 300.0;
 /// Final approach duration, as a fraction of the orbital period.
 const APPROACH_FRACTION: f64 = 0.25;
 
@@ -57,13 +61,26 @@ pub fn plan_intercept(chaser: &Orbit, target: &Orbit, now: f64) -> Result<Interc
         while wait >= period {
             wait -= period;
         }
+        // Close orbits drift apart so slowly that waiting for the phase can take months: park in
+        // a faster or slower orbit for a few revolutions first.
+        let mut pre: Vec<(f64, f64)> = vec![];
+        if wait > MAX_WAIT_S {
+            if let Some((tp_wait, burns)) = drift_plan(chaser, target, now, want, phi0).filter(|d| d.0 < wait) {
+                wait = tp_wait;
+                pre = burns;
+            }
+        }
         let (dep, arrive) = (now + wait, now + wait + t_tr);
         let (v_c1, v_c2) = ((mu / rc).sqrt(), (mu / rt).sqrt());
         let v_p = (mu * (2.0 / rc - 1.0 / at)).sqrt();
         let v_a = (mu * (2.0 / rt - 1.0 / at)).sqrt();
         let (d1, d2) = ((v_p - v_c1).abs(), (v_c2 - v_a).abs());
         let result = Orbit { body: chaser.body, r: rt, theta0: wrap(target.theta(arrive) - lag), epoch: arrive };
-        return Ok(Intercept { burns: vec![(dep, d1), (arrive, d2)], arrive, dv: d1 + d2, result });
+        let mut burns = pre;
+        burns.push((dep, d1));
+        burns.push((arrive, d2));
+        let dv = burns.iter().map(|b| b.1).sum();
+        return Ok(Intercept { burns, arrive, dv, result });
     }
     // Same altitude: a phasing orbit. The chaser must gain `gain` radians on the target.
     let gain = wrap(phi0 - lag);
@@ -84,6 +101,43 @@ pub fn plan_intercept(chaser: &Orbit, target: &Orbit, now: f64) -> Result<Interc
         return Ok(Intercept { burns: vec![(now, d), (end, d)], arrive: end, dv: 2.0 * d, result });
     }
     Err("No safe phasing orbit: the target is too close behind. Raise or lower your orbit first.".into())
+}
+
+/// Phase the chaser with a drift orbit so it is back in its own circular orbit, `want` radians
+/// behind the target, after `k` revolutions. Returns (wait until the window, the two burns).
+fn drift_plan(chaser: &Orbit, target: &Orbit, now: f64, want: f64, phi0: f64) -> Option<(f64, Vec<(f64, f64)>)> {
+    let body = chaser.body();
+    let mu = body.mu;
+    let (rc, nt) = (chaser.r, target.mean_motion());
+    let tc = chaser.period();
+    let min_peri = body.radius + body.min_orbit_alt();
+    let mut best: Option<(f64, f64, f64)> = None; // (duration, tp, k)
+    for k in 1..=30 {
+        let kf = k as f64;
+        let m0 = ((nt * kf * tc - (want - phi0)) / TAU).round();
+        for dm in [-1.0, 0.0, 1.0] {
+            let tp = (want - phi0 + TAU * (m0 + dm)) / (nt * kf);
+            if tp < 0.6 * tc || tp > 2.0 * tc {
+                continue;
+            }
+            let a_p = (mu * (tp / TAU).powi(2)).cbrt();
+            if 2.0 * a_p - rc < min_peri {
+                continue;
+            }
+            let dur = tp * kf;
+            let d = ((mu / rc).sqrt() - (mu * (2.0 / rc - 1.0 / a_p)).sqrt()).abs();
+            if 2.0 * d > MAX_DRIFT_DV {
+                continue;
+            }
+            if best.map_or(true, |b| dur < b.0) {
+                best = Some((dur, tp, kf));
+            }
+        }
+    }
+    let (dur, tp, _) = best?;
+    let a_p = (mu * (tp / TAU).powi(2)).cbrt();
+    let d = ((mu / rc).sqrt() - (mu * (2.0 / rc - 1.0 / a_p)).sqrt()).abs();
+    Some((dur, vec![(now, d), (now + dur, d)]))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -163,10 +217,23 @@ mod tests {
             let chaser = orb(190_000.0, theta_c);
             let target = orb(400_000.0, theta_t);
             let plan = plan_intercept(&chaser, &target, 50.0).unwrap();
-            assert!(plan.dv > 100.0 && plan.dv < 400.0, "{}", plan.dv);
+            assert!(plan.dv > 100.0 && plan.dv < 700.0, "{}", plan.dv);
             let gap = wrap(target.theta(plan.arrive) - plan.result.theta(plan.arrive));
             assert!((gap * target.r - STANDOFF).abs() < 1.0, "{gap}");
             assert!(plan.arrive >= 50.0 && plan.arrive - 50.0 < 2.0 * TAU / (chaser.mean_motion() - target.mean_motion()).abs());
+        }
+    }
+
+    #[test]
+    fn close_orbits_do_not_take_months() {
+        for theta_t in [0.2, 1.5, 3.0, 4.4, 6.0] {
+            let chaser = orb(139_000.0, 0.0);
+            let target = orb(135_000.0, theta_t);
+            let plan = plan_intercept(&chaser, &target, 0.0).unwrap();
+            assert!(plan.arrive < 40.0 * 3600.0, "{theta_t}: {} h", plan.arrive / 3600.0);
+            assert!(plan.dv < 400.0, "{}", plan.dv);
+            let gap = wrap(target.theta(plan.arrive) - plan.result.theta(plan.arrive));
+            assert!((gap * target.r - STANDOFF).abs() < 1.0, "{gap}");
         }
     }
 

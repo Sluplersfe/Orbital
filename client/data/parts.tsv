@@ -11,24 +11,24 @@ tank_m   | Medium Tank        | 1 | 0   | 800   | 70  | structures   | 1 | -    
 cone1    | Nose Cone          | 1 | 5   | 100   | 80  | structures   | 1 | -      | -        | nosecone  |
 strut1   | Reinforced Ring    | 1 | 10  | 150   | 120 | structures   | 1 | -      | -        | structure |
 # --- Era 2: orbit ---
-vector   | Vector Engine      | 2 | 40  | 3000  | 80  | propulsion   | 2 | -      | -        | engine    | thrust=700,isp_sl=275,isp_vac=315
-vacuum   | Vacuum Engine      | 2 | 40  | 700   | 80  | propulsion   | 2 | -      | -        | engine    | thrust=90,isp_sl=140,isp_vac=360
-tank_l   | Large Tank         | 2 | 30  | 2400  | 60  | structures   | 2 | -      | -        | tank      | prop=21600
-tank_xl  | Huge Tank          | 2 | 60  | 6500  | 55  | structures   | 2 | -      | -        | tank      | prop=58500
-sat1     | Satellite          | 2 | 25  | 500   | 80  | automation   | 2 | -      | -        | payload   |
-crew1    | Crew Capsule       | 2 | 50  | 1800  | 80  | life_support | 1 | -      | -        | pod       | crew=3
+vector   | Vector Engine      | 2 | 25 | 3000  | 80  | propulsion   | 2 | -      | -        | engine    | thrust=700,isp_sl=275,isp_vac=315
+vacuum   | Vacuum Engine      | 2 | 25 | 700   | 80  | propulsion   | 2 | -      | -        | engine    | thrust=90,isp_sl=140,isp_vac=360
+tank_l   | Large Tank         | 2 | 15 | 2400  | 60  | structures   | 2 | -      | -        | tank      | prop=21600
+tank_xl  | Huge Tank          | 2 | 30 | 6500  | 55  | structures   | 2 | -      | -        | tank      | prop=58500
+sat1     | Satellite          | 2 | 20 | 500   | 80  | automation   | 2 | -      | -        | payload   |
+crew1    | Crew Capsule       | 2 | 40 | 1800  | 80  | life_support | 1 | -      | -        | pod       | crew=3
 # --- Era 3: stations ---
-dock1    | Docking Port       | 3 | 40  | 150   | 80  | automation   | 1 | -      | -        | docking   |
-core1    | Station Core       | 3 | 60  | 1600 | 60  | structures   | 2 | dock1  | -        | core      |
-solar1   | Solar Array        | 3 | 30  | 200 | 40  | automation   | 2 | -      | -        | solar     | kw=20
-batt1    | Battery            | 3 | 25  | 250 | 60  | automation   | 2 | -      | -        | battery   | kwh=50
-hab1     | Habitat Module     | 3 | 70  | 2000 | 60  | life_support | 2 | core1  | -        | habitat   | crew=4,recycle=0.3
-supply1  | Supply Pod         | 3 | 30  | 650 | 60  | life_support | 1 | -      | -        | supply    | food=200,water=300
-depot1   | Fuel Depot         | 3 | 80  | 1200 | 60  | propulsion   | 2 | core1  | -        | depot     | prop=60000
-asm1     | Assembly Bay       | 3 | 90  | 1400 | 60  | structures   | 3 | core1  | -        | assembly  |
+dock1    | Docking Port       | 3 | 30 | 150   | 80  | automation   | 1 | -      | -        | docking   |
+core1    | Station Core       | 3 | 50 | 1600 | 60  | structures   | 2 | dock1  | -        | core      |
+solar1   | Solar Array        | 3 | 25 | 200 | 40  | automation   | 2 | -      | -        | solar     | kw=20
+batt1    | Battery            | 3 | 20 | 250 | 60  | automation   | 2 | -      | -        | battery   | kwh=50
+hab1     | Habitat Module     | 3 | 60 | 2000 | 60  | life_support | 2 | core1  | -        | habitat   | crew=4,recycle=0.3
+supply1  | Supply Pod         | 3 | 25 | 650 | 60  | life_support | 1 | -      | -        | supply    | food=200,water=300
+depot1   | Fuel Depot         | 3 | 70 | 1200 | 60  | propulsion   | 2 | core1  | -        | depot     | prop=60000
+asm1     | Assembly Bay       | 3 | 80 | 1400 | 60  | structures   | 3 | core1  | -        | assembly  |
 # --- Era 4: Moon and asteroids ---
-descent1 | Lander Engine      | 4 | 90  | 900   | 80  | propulsion   | 2 | vacuum | -        | engine    | thrust=150,isp_sl=150,isp_vac=340
-survey1  | Survey Gear        | 4 | 100 | 200   | 80  | automation   | 3 | dock1  | -        | survey    |
+descent1 | Lander Engine      | 4 | 60 | 900   | 80  | propulsion   | 2 | vacuum | -        | engine    | thrust=150,isp_sl=150,isp_vac=340
+survey1  | Survey Gear        | 4 | 70 | 200   | 80  | automation   | 3 | dock1  | -        | survey    |
 crew_tr  | Crew Training      | 4 | 60  | 0     | 0   | life_support | 2 | hab1   | -        | node      | grant=employees
 farm1    | Space Farm         | 4 | 110 | 2500 | 50  | life_support | 3 | hab1   | -        | farm      | food=40
 isru1    | ISRU Plant         | 4 | 120 | 1800 | 50  | propulsion   | 3 | depot1 | water_ice | isru     | prop=600

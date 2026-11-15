@@ -15,7 +15,9 @@ use crate::station::{self, Event, Station, FOOD_KG_H, WATER_KG_H};
 use crate::vessel::Vessel;
 
 /// Pods carry this many person-hours of food and water per seat, so short flights need no supply pod.
-pub const POD_RATION_HOURS: f64 = 24.0;
+pub const POD_RATION_HOURS: f64 = 72.0;
+/// Research returned by every orbital flight, so launching modules is never wasted.
+pub const ORBIT_DATA_RP: u32 = 10;
 /// Largest step the world clock takes at once, so slow trouble (a brownout) is seen as it grows.
 const MAX_STEP_S: f64 = 300.0;
 
@@ -315,6 +317,21 @@ impl Program {
         }
         let mut ship = None;
         if report.outcome == Outcome::Orbit {
+            // Every orbital flight returns data; the first with a satellite or a crew pays extra.
+            let has_sat = f.vessel.stages.iter().flatten().any(|p| *p == "sat1");
+            let mut extra = vec![];
+            if has_sat {
+                extra.extend(self.progress.grant("satellite", 40, "satellite in orbit"));
+            }
+            if !crew.is_empty() {
+                extra.extend(self.progress.grant("crewed_orbit", 60, "crewed orbit"));
+            }
+            self.progress.rp += ORBIT_DATA_RP;
+            extra.push(format!("+{ORBIT_DATA_RP} orbital data"));
+            for a in &extra {
+                self.say(a.clone());
+            }
+            awards.extend(extra);
             let id = self.new_id();
             match Spacecraft::from_flight(id, name, f, t0) {
                 Ok(mut sc) => {
@@ -333,7 +350,6 @@ impl Program {
         } else if matches!(report.outcome, Outcome::BrokeUp | Outcome::Crashed | Outcome::SpaceLost) {
             self.kill(crew, &report.headline.to_lowercase());
         }
-        awards.shrink_to_fit();
         FlightResult { report, awards, ship }
     }
 
@@ -368,15 +384,21 @@ impl Program {
         let st = Station::found(id, name, &self.ships[i])?;
         self.next_id += 1;
         self.ships.remove(i);
-        let ok = st.has(|k| matches!(k, Kind::Core)) && st.has(|k| matches!(k, Kind::Solar { .. })) && st.has(|k| matches!(k, Kind::Habitat { .. }));
         self.stations.push(st);
         self.say(format!("Station {name} founded."));
+        self.check_station(self.stations.len() - 1);
+        Ok(id)
+    }
+
+    /// The Stations goal: a core, power and housing together.
+    fn check_station(&mut self, ti: usize) {
+        let st = &self.stations[ti];
+        let ok = st.has(|k| matches!(k, Kind::Core)) && st.has(|k| matches!(k, Kind::Solar { .. })) && st.has(|k| matches!(k, Kind::Habitat { .. }));
         if ok {
             self.grant("station".into(), 150, "station (core, power and housing)");
-        } else {
+        } else if !self.progress.milestones.contains("station") {
             self.say("A station needs a core, a solar array and a habitat to count. Dock more modules.");
         }
-        Ok(id)
     }
 
     /// Fly a ship to a station in the same orbit and dock: phasing and transfer burns, a
@@ -448,6 +470,7 @@ impl Program {
         self.stations[ti] = trial;
         let ship = self.ships.remove(si);
         self.say(format!("{} joined {}.", ship.name, self.stations[ti].name));
+        self.check_station(ti);
         Ok(())
     }
 
