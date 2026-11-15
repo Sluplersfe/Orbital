@@ -1,0 +1,103 @@
+// Shared wire schema for client (Rust, prost via client/build.rs) and server (Go, generated into
+// server/internal/pb with `make -C server proto`).
+// TCP 4004: 4-byte big-endian length + Envelope. UDP 4005: one Datagram per packet.
+syntax = "proto3";
+package orbital;
+option go_package = "orbital/server/internal/pb";
+
+message Vec3d { double x = 1; double y = 2; double z = 3; }
+
+// A ship on rails: its state at epoch (world seconds). Its position at any later world time is a
+// pure function of this (orbit propagate), so it never depends on which client is host.
+message RailShip {
+  uint64 ship_id = 1;
+  Vec3d position = 2;
+  Vec3d velocity = 3;
+  double epoch = 4;
+}
+
+message Join { string token = 1; }
+
+message JoinAck {
+  bool ok = 1;
+  string error = 2;
+  string player = 3;
+  string host = 4;
+  double world_time = 5;
+  bytes udp_key = 6;          // must prefix every UDP datagram
+  HostSnapshot snapshot = 7;  // set when the joiner is host
+}
+
+// Server-originated health probe; the client echoes the nonce back as Pong.
+message Ping { uint64 nonce = 1; double world_time = 2; }
+message Pong { uint64 nonce = 1; }
+
+// Pilot-authoritative state, sent over UDP.
+message ShipState {
+  uint64 ship_id = 1;
+  string pilot = 2;
+  Vec3d position = 3;
+  Vec3d velocity = 4;
+  double world_time = 5;
+}
+
+// Host-owned world state: uploaded by the host periodically, cached by the server and handed to
+// the next host, so an abrupt host death loses at most one upload interval. Stations are opaque
+// until phase 4.
+message HostSnapshot {
+  double world_time = 1;
+  repeated RailShip rails = 2;
+  bytes stations = 3;
+}
+
+message HostChange { string new_host = 1; HostSnapshot snapshot = 2; }
+
+enum CrewRole {
+  CREW_ROLE_UNSPECIFIED = 0;
+  CREW_ROLE_PILOT = 1;
+  CREW_ROLE_NAVIGATOR = 2;
+  CREW_ROLE_FLIGHT_ENGINEER = 3;
+  CREW_ROLE_MISSION_SPECIALIST = 4;
+}
+
+// ship_id 0 with CREW_ROLE_PILOT launches a new ship piloted by the claimer.
+message SeatClaim { uint64 ship_id = 1; CrewRole role = 2; }
+message SeatRelease { uint64 ship_id = 1; }
+
+message Seat { string player = 1; CrewRole role = 2; }
+message Ship {
+  uint64 ship_id = 1;
+  repeated Seat seats = 2;
+  RailShip rails = 3;  // set when unpiloted and in a stable orbit
+  bool frozen = 4;     // unpiloted and not in a stable orbit
+  ShipState last = 5;  // last pilot state, for a new pilot to resume from
+}
+
+message Roster {
+  repeated string players = 1;
+  string host = 2;
+  repeated Ship ships = 3;
+  double world_time = 4;
+}
+
+message Error { string text = 1; }
+
+message Envelope {
+  oneof msg {
+    Join join = 1;
+    JoinAck join_ack = 2;
+    Ping ping = 3;
+    Pong pong = 4;
+    HostSnapshot host_snapshot = 5;
+    HostChange host_change = 6;
+    SeatClaim seat_claim = 7;
+    SeatRelease seat_release = 8;
+    Roster roster = 9;
+    Error error = 10;
+  }
+}
+
+message Datagram {
+  bytes key = 1;             // JoinAck.udp_key; empty on server-to-client datagrams
+  ShipState ship_state = 2;  // absent: address registration only
+}

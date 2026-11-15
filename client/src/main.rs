@@ -5,7 +5,35 @@ use orbital_client::progress::{Progress, ERA_NAMES};
 use orbital_client::report::FlightReport;
 use orbital_client::sim::{Flight, Status};
 use orbital_client::vessel::{orbit_dv_budget, Vessel};
+use orbital_client::net::{self, pb, NetClient, World};
 use orbital_client::{R_EARTH, SPACE_ALT};
+
+/// Co-op session, present when ORBITAL_SERVER and ORBITAL_TOKEN are set.
+#[derive(Resource)]
+struct Online {
+    client: NetClient,
+    world: World,
+    last_send: f64,
+}
+
+fn connect_from_env() -> Option<Online> {
+    let server = std::env::var("ORBITAL_SERVER").ok()?;
+    let token = std::env::var("ORBITAL_TOKEN").ok()?;
+    let host = server.rsplit_once(':').map_or(server.as_str(), |(h, _)| h).to_string();
+    let tcp = if server.contains(':') { server.clone() } else { format!("{server}:4004") };
+    let udp = std::env::var("ORBITAL_UDP").unwrap_or(format!("{host}:4005"));
+    match NetClient::connect(&tcp, &udp, &token) {
+        Ok(client) => {
+            let world = World::new(&client.ack);
+            info!("joined {tcp} as {}", world.me);
+            Some(Online { client, world, last_send: 0.0 })
+        }
+        Err(e) => {
+            error!("could not join {tcp}: {e}");
+            None
+        }
+    }
+}
 
 enum Mode {
     Builder,
@@ -31,7 +59,11 @@ struct Hud;
 fn main() {
     let mut vessel = Vessel::default();
     vessel.stages = vec![vec!["spark", "tank_m"], vec!["pod1", "chute1"]];
-    App::new()
+    let mut app = App::new();
+    if let Some(online) = connect_from_env() {
+        app.insert_resource(online);
+    }
+    app
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window { title: "Orbital".into(), ..default() }),
             ..default()
@@ -41,7 +73,7 @@ fn main() {
             note: "Welcome. Build a rocket, then press L to launch.".into(),
         })
         .add_systems(Startup, setup)
-        .add_systems(Update, (input, fly, hud, draw).chain())
+        .add_systems(Update, (net_sync, input, fly, hud, draw).chain())
         .run();
 }
 
@@ -59,7 +91,7 @@ fn unlocked_parts(g: &Game) -> Vec<&'static parts::Part> {
     CATALOG.iter().filter(|p| g.progress.has(p.id)).collect()
 }
 
-fn input(keys: Res<ButtonInput<KeyCode>>, mut g: ResMut<Game>) {
+fn input(keys: Res<ButtonInput<KeyCode>>, mut g: ResMut<Game>, online: Option<Res<Online>>) {
     let g = &mut *g;
     let pressed = |k| keys.just_pressed(k);
     match &mut g.mode {
@@ -91,6 +123,9 @@ fn input(keys: Res<ButtonInput<KeyCode>>, mut g: ResMut<Game>) {
                 if errs.is_empty() {
                     g.warp = 1.0;
                     g.mode = Mode::Flying(Box::new(Flight::new(g.vessel.clone())));
+                    if let Some(o) = &online {
+                        let _ = o.client.claim(0, pb::CrewRole::Pilot);
+                    }
                 } else {
                     g.note = errs.join(" ");
                 }
@@ -130,11 +165,50 @@ fn input(keys: Res<ButtonInput<KeyCode>>, mut g: ResMut<Game>) {
     }
 }
 
-fn fly(time: Res<Time>, mut g: ResMut<Game>) {
+/// Pull server events, and publish our ship's state at 10 Hz while piloting.
+fn net_sync(time: Res<Time>, mut g: ResMut<Game>, online: Option<ResMut<Online>>) {
+    let Some(mut o) = online else { return };
+    let o = &mut *o;
+    for ev in o.client.poll() {
+        o.world.apply(ev);
+    }
+    if !o.world.error.is_empty() {
+        g.note = format!("Server: {}", std::mem::take(&mut o.world.error));
+    }
+    let now = time.elapsed_secs_f64();
+    match (&g.mode, o.world.my_ship) {
+        (Mode::Flying(f), Some(id)) if now - o.last_send >= 0.1 => {
+            o.last_send = now;
+            let _ = o.client.send_state(pb::ShipState {
+                ship_id: id, pilot: String::new(), world_time: o.world.world_time(),
+                position: Some(net::v3(f.pos)), velocity: Some(net::v3(f.vel)),
+            });
+        }
+        (Mode::Flying(_), _) => {}
+        (_, Some(id)) => {
+            // Flight over: leave the pilot seat (an orbiting ship stays on rails).
+            let _ = o.client.send(pb::envelope::Msg::SeatRelease(pb::SeatRelease { ship_id: id }));
+            o.world.my_ship = None;
+        }
+        _ => {}
+    }
+}
+
+fn online_text(o: &Online) -> String {
+    let w = &o.world;
+    if w.closed {
+        return "\n\nOFFLINE: lost connection to the server".into();
+    }
+    let role = if w.is_host() { " (you are host)" } else { "" };
+    format!("\n\nCO-OP as {}{}   host {}   players {}   other ships {}   world T {:.0} s",
+        w.me, role, w.host, w.roster.players.len(), w.others().len(), w.world_time())
+}
+
+fn fly(time: Res<Time>, mut g: ResMut<Game>, online: Option<Res<Online>>) {
     let g = &mut *g;
     let Mode::Flying(f) = &mut g.mode else { return };
-    // Warp only when coasting in vacuum.
-    let warp = if f.alt() > 75_000.0 && f.throttle == 0.0 { g.warp } else { 1.0 };
+    // Warp only when coasting in vacuum, and never in co-op: the world clock is shared.
+    let warp = if online.is_none() && f.alt() > 75_000.0 && f.throttle == 0.0 { g.warp } else { 1.0 };
     let dt = (time.delta_secs_f64() * warp).min(2.0);
     let step = if warp > 1.0 { 0.25 } else { 0.02 };
     f.advance(dt, step);
@@ -147,14 +221,15 @@ fn fly(time: Res<Time>, mut g: ResMut<Game>) {
     }
 }
 
-fn hud(g: Res<Game>, mut q: Query<&mut Text, With<Hud>>) {
+fn hud(g: Res<Game>, online: Option<Res<Online>>, mut q: Query<&mut Text, With<Hud>>) {
     let Ok(mut text) = q.single_mut() else { return };
+    let net = online.map_or(String::new(), |o| online_text(&o));
     text.0 = match &g.mode {
         Mode::Builder => builder_text(&g),
         Mode::Research => research_text(&g),
         Mode::Flying(f) => cockpit_text(f, g.warp),
         Mode::Report(r, lines) => report_text(r, lines),
-    };
+    } + &net;
 }
 
 fn builder_text(g: &Game) -> String {
@@ -231,7 +306,7 @@ impl Computer for Flight {
     fn progress_unlocked_computer(&self) -> bool { self.alt() > 20_000.0 }
 }
 
-fn draw(g: Res<Game>, mut gizmos: Gizmos, windows: Query<&Window>) {
+fn draw(g: Res<Game>, online: Option<Res<Online>>, mut gizmos: Gizmos, windows: Query<&Window>) {
     let Mode::Flying(f) = &g.mode else { return };
     let Ok(w) = windows.single() else { return };
     // Map: Earth at lower right, scaled so a 400 km altitude fits.
@@ -241,4 +316,10 @@ fn draw(g: Res<Game>, mut gizmos: Gizmos, windows: Query<&Window>) {
     gizmos.circle_2d(Isometry2d::from_translation(centre), ((R_EARTH + SPACE_ALT) * scale) as f32, Color::srgb(0.2, 0.2, 0.3));
     let p = Vec2::new((f.pos.x * scale) as f32, (f.pos.y * scale) as f32) + centre;
     gizmos.circle_2d(Isometry2d::from_translation(p), 4.0, Color::srgb(1.0, 0.6, 0.1));
+    if let Some(o) = online {
+        for (_, pos) in o.world.others() {
+            let q = Vec2::new((pos.x * scale) as f32, (pos.y * scale) as f32) + centre;
+            gizmos.circle_2d(Isometry2d::from_translation(q), 3.0, Color::srgb(0.3, 1.0, 0.4));
+        }
+    }
 }

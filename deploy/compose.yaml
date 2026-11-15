@@ -1,0 +1,16 @@
+# Orbital dedicated server on hermes. Run from this directory: docker compose up -d --build
+# First run: mkdir data && sudo chown 65532 data   (the image runs as distroless nonroot)
+# Trust a player (prints their join token, appends to ./data/tokens.txt):
+#   docker compose run --rm --entrypoint /orbital-server orbital token NAME -tokens /data/tokens.txt
+# Then restart the server so it reloads the tokens file: docker compose restart orbital
+services:
+  orbital:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "4004:4004/tcp"
+      - "4005:4005/udp"
+    volumes:
+      - ./data:/data

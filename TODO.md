@@ -2,6 +2,38 @@
 
 Tracks the work for the current phase. See [PHASES.md](PHASES.md) for the phase list and gates.
 
+## Phase 3: Co-op foundation
+
+Completed:
+
+- [x] Go orbit module (`server/internal/orbit`) against the shared test vectors
+- [x] Join tokens, player roster, host election (earliest-joined healthy) and world clock that freezes when empty (`server/internal/session`)
+- [x] Shared protobuf schema draft (`proto/orbital.proto`)
+
+- [x] Rails propagator (`orbit::propagate` / `orbit.Propagate`) with a shared test vector, checked against RK4
+- [x] Server relay (`server/internal/server`): TCP lobby with length-prefixed envelopes, UDP pilot-state relay with per-session keys and sanity checks
+- [x] Pilot-owned ships, seat claims and crew roles (one player per role per ship)
+- [x] Host election from measured ping RTT and loss, HostChange broadcast with a server-cached snapshot (survives abrupt host death)
+- [x] Unpiloted ships go on rails when in stable orbit, otherwise freeze
+- [x] Tokens file plus `orbital-server token NAME`
+- [x] Rust client networking (`client/src/net.rs`) and opt-in co-op in the game (`ORBITAL_SERVER`, `ORBITAL_TOKEN`); time warp disabled online
+- [x] Codegen: prost via `build.rs`, Go via `make proto`; CI workflow checks generated code, runs tests
+- [x] Dockerfile and `deploy/compose.yaml`, image builds locally
+- [x] Automated gate checks: Go 4-client test (forced handoff, no rails jump, empty clock freeze) and a Rust-to-Go test
+
+Open:
+
+- [x] Deploy to `hermes` (container `deploy-orbital-1`, `~/orbital/deploy`, listening on 4004/tcp and 4005/udp, no tokens issued yet)
+- [ ] Forward 4004/tcp and 4005/udp on the router and allow them in the `hermes` firewall (needs your go-ahead; `sudo` there needs a password)
+- [ ] Issue join tokens for the testers (`docker compose run --rm --entrypoint /orbital-server orbital token NAME -tokens /data/tokens.txt`, then `docker compose restart orbital`)
+- [ ] Run the real gate: 4+ players fly 30 minutes on `hermes`
+- [ ] Crew-role consoles in the client (navigator, flight engineer, mission specialist views); roles exist on the wire only
+- [ ] Rate-limit client messages; tune host health thresholds (150 ms / 5% are guesses)
+- [ ] Persist the world clock and rails with the world save
+- [ ] Shared launch frame: each flight starts at inertial (R_EARTH, 0, 0) regardless of world time, so ships launched at different times are not consistently placed; rotate the pad with Earth by world time
+- [ ] Play the in-game co-op path by hand (only the headless Rust and Go tests have run)
+- [ ] Decide the playtesting approach and record it in PHASES.md
+
 ## Phase 2: Single-player slice
 
 Completed:
@@ -17,9 +49,7 @@ Completed:
 
 Open:
 
-- [ ] Decide the playtesting approach and record it in PHASES.md (needed before phase 3)
 - [ ] Save and load progress to disk (not required by the gate)
-- [ ] Write the Go orbit module against the shared test vectors (phase 3 server work)
 
 ## Phase 1: Bootstrapping
 

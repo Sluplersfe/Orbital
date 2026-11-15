@@ -72,6 +72,8 @@ The client is authoritative, and each thing has one owner. Every player sends th
 
 **Who simulates what.** A piloted ship is simulated by its pilot's client, which is authoritative for it. Everything nobody is piloting (the world clock, coasting ships, stations and their life support) is run by one host client, the earliest-joined player with a healthy connection (latency and packet-loss thresholds). Unpiloted ships are on rails, described by orbital elements, so the host's state is small. A host handoff is a snapshot of the clock and station state, and no ship jumps because no ship's position depends on the host. If a pilot disconnects, an orbiting ship goes on rails and any other ship is frozen in place until a player takes the seat.
 
+*As built in phase 3:* the server owns the world clock and the rails table (each rails ship is a state vector at an epoch, propagated by the shared Kepler code), so a handoff cannot move a ship by construction. The host's remaining job is station state (phase 4), which it uploads in `HostSnapshot` and the server hands to the next host.
+
 **No time warp.** The game runs in real time. The world clock advances only while at least one player is online, and it stops when everyone is offline, so nothing happens to ships, farms or food while the server is empty.
 
 ## Rocket design and flight systems
@@ -173,12 +175,12 @@ services:
       - ./saves:/data/saves
 ```
 
-- [ ] Multi-stage Dockerfile: build a static Go binary in a golang image, run it in a minimal image as a non-root user
-- [ ] Shared protobuf schema in the repo, with Go and Rust code generated from it in CI
+- [x] Multi-stage Dockerfile: build a static Go binary in a golang image, run it in a minimal image as a non-root user
+- [x] Shared protobuf schema in the repo, with Go and Rust code generated from it in CI
 - [ ] Forward 4004/tcp and 4005/udp from the router to `hermes`, and allow them in the host firewall
 - [ ] Persist world saves in the mounted volume and back them up
 - [ ] Save the world clock with the world, and stop it when the last player leaves
-- [ ] Require a join token or allowlist, since the ports are open to the internet
+- [x] Require a join token or allowlist, since the ports are open to the internet
 - [ ] Rate-limit and size-check every client message
 - [ ] Log rotation and a health check so the container restarts cleanly
 

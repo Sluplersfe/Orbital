@@ -11,3 +11,6 @@ saves/
 .idea/
 .vscode/
 .DS_Store
+server/tokens.txt
+tokens.txt
+deploy/data/
