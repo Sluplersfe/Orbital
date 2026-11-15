@@ -23,7 +23,9 @@ Completed:
 
 Open:
 
-- [ ] Deploy to `hermes`, forward 4004/tcp and 4005/udp, open the firewall (needs your go-ahead)
+- [x] Deploy to `hermes` (container `deploy-orbital-1`, `~/orbital/deploy`, listening on 4004/tcp and 4005/udp, no tokens issued yet)
+- [ ] Forward 4004/tcp and 4005/udp on the router and allow them in the `hermes` firewall (needs your go-ahead; `sudo` there needs a password)
+- [ ] Issue join tokens for the testers (`docker compose run --rm --entrypoint /orbital-server orbital token NAME -tokens /data/tokens.txt`, then `docker compose restart orbital`)
 - [ ] Run the real gate: 4+ players fly 30 minutes on `hermes`
 - [ ] Crew-role consoles in the client (navigator, flight engineer, mission specialist views); roles exist on the wire only
 - [ ] Rate-limit client messages; tune host health thresholds (150 ms / 5% are guesses)
