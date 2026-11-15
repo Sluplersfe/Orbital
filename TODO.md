@@ -16,9 +16,14 @@ Completed:
 - [x] Shared research on the wire: proto, Go server (`TestSharedProgram`), Rust client (`net.rs`, `tests/coop.rs`)
 - [x] Mission control view (`M`) and online hooks in the client
 - [x] Gate playthrough `client/tests/phase4.rs`, run headlessly
+- [x] First-person 3D client (`client/src/gfx/`, `client/src/ui.rs`): procedural planets, Sun, stars and sky; launch site with terrain, tower and buildings; rocket models built from the part data; a cockpit with navball, gauges, lamps and mouse-operated throttle, stick, covered staging button and chute switch; an outside view; a station cabin for mission control in orbit; clickable panels replacing the text screens
 
 Open:
 
+- [ ] Launch and look at the 3D client: it compiles but has never been run, so lighting, exposure, scale, camera frames, navball orientation and picking are unchecked
+- [ ] Passenger view for non-pilot crew online (needs other players' ship state shared as more than a position)
+- [ ] Text on the cockpit screens (render-to-texture); the two screens show only a grid and the numbers are in screen panels
+- [ ] Atmosphere scattering (Bevy `Atmosphere`) instead of the altitude-based sky colour and haze shell
 - [ ] Do not redeploy to `hermes` yet: the proto changed, and the deployed server would not match the new client
 - [ ] Play it by hand: the Bevy GUI and mission control have never been run, and the phase 4 gate has only been checked headlessly
 - [ ] Share stations and ships over the wire (`HostSnapshot.stations` is still opaque bytes)
