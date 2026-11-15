@@ -1,11 +1,16 @@
 //! Orbital client core: pure, headless game logic (64-bit physics), no rendering.
 pub mod autopilot;
+pub mod bodies;
 pub mod net;
 pub mod orbit;
 pub mod parts;
+pub mod program;
 pub mod progress;
+pub mod rendezvous;
 pub mod report;
 pub mod sim;
+pub mod space;
+pub mod station;
 pub mod vessel;
 
 pub const G0: f64 = 9.80665;

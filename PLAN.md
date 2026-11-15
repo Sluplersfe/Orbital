@@ -196,6 +196,24 @@ services:
 
 Each phase ends in a gate. If a gate fails, stay in that phase and fix the weakest area before building more. Set dates only after the prototype shows how fast you can build.
 
+## Phase 4 decisions
+
+These are what phase 4 built, and where it differs from or fills in the text above. The numbers live in `client/data/*.tsv` and `client/src/station.rs`, so changing them is a data edit.
+
+- **Patched conics, impulsive burns.** A trip between bodies is a Hohmann transfer through the body tree. There is no time warp, so each body has a designed transit time (`transit_s` in `bodies.tsv`): the Moon is 15 minutes, Mars 2 hours, Neptune 12 hours. The delta-v is real; the clock is compressed so a trip is something you do in a session.
+- **Ships and stations are on rails.** A ship is an `Orbit` (body, radius, phase, epoch), `Landed`, `Docked`, `Transit` or `Destroyed`. Only a launch, a descent or a lift-off runs the 64-bit sim; everything else is a function of the world clock. The ascent autopilot is Earth-specific; `Descent` and `Takeoff` fly airless bodies.
+- **Orbit insertion.** A launch that reaches orbit is circularised at apoapsis, and the delta-v for that burn is taken from the ship's propellant.
+- **Rendezvous.** The chaser flies a Hohmann transfer timed to end 3 km behind the station, then a two-impulse Clohessy-Wiltshire approach, checked against the real two-body motion. Docking needs under 20 m and 0.5 m/s. When the two orbits are close, waiting for the window can take months, so the chaser first parks in a faster or slower drift orbit (at most 300 m/s). Docking needs a port on both sides and someone aboard, or the Flight AI.
+- **Refuelling is free but not magic.** A depot refills from Earth resupply at 20,000 kg/h while the station is in Earth orbit. Anywhere else the fuel has to be made by an ISRU plant, which needs water ice claimed. A ship refuels only while docked, and the station's stock is finite.
+- **Station rules.** A station counts (Era 4) once a core, a solar array and a habitat are together. Power is generation against load; a brownout of 600 s kills the crew. A habitat houses 4 and recycles 30% of food and water; a farm adds 40% recycling and grows food. Ships do not recycle. Rates are 10 kg food and 15 kg water per person-hour, which is about 100 times real life, so the supply problem shows up inside a play session. A pod carries 72 person-hours of rations.
+- **Death.** A crew that starves, dehydrates, loses power or crashes dies and respawns at Earth. Players can always teleport to Earth or to a friend.
+- **Employees.** Recruited once Crew Training is unlocked. They fly alone only between a body and its parent or moon (Earth-Moon). Anything farther needs a player aboard, or the Flight AI node.
+- **Surveying.** A crewed survey claims every resource at the body and pays 100 RP. A probe pays 40 RP and claims nothing. The Moon, Vesta and the invented moon Halla are surveyed from the ground. Mars, Jupiter, Neptune, Tycho and Ymir are surveyed from orbit, because atmospheric landing is not modelled.
+- **Invented bodies.** Tycho (a world with an atmosphere and about half Earth's gravitational parameter, at 45 AU), Ymir (a giant larger than Neptune, at 72 AU) and Ymir's moon Halla. They carry the rare resources (platinum, exotic matter, helium-3) that gate tier 4 of the tech tree.
+- **Research economy.** First-time awards: liftoff, 30 km, 60 km, supersonic, 2 km/s, space, recovery, orbit (100), crewed orbit (60), a satellite (40), docking (60), refuelling (40), station (150), orbiting and landing on each body, and each survey. Every orbital flight returns 10 RP, so building a station is never a dead end. Part costs are set so Era 1 pays for the first orbit with a few points to spare. `tests/phase4.rs` checks this by playing it.
+- **Module masses.** Launch capacity with Era-2 parts is small (about 0.6% payload), so station modules are light: core 1.6 t, habitat 2 t, depot 1.2 t, bay 1.4 t.
+- **Shared research on the wire.** The server owns the group's research points, milestones, unlocks and claims. A client reports an award, an unlock or a claim; the server pays a milestone once however many players report it, and refuses an unlock the group cannot afford. Stations and ships are still owned by the client that made them (the client is authoritative per owner); sharing them across clients is not built yet.
+
 ## Risks and open questions
 
 | Risk | Why it matters | Mitigation |
@@ -210,8 +228,8 @@ Each phase ends in a gate. If a gate fails, stay in that phase and fix the weake
 
 **Open questions to decide next:**
 
-- [ ] Which two to four invented planets and moons do we add, and what are their orbits?
+- [x] Which two to four invented planets and moons do we add, and what are their orbits? Answered in [Phase 4 decisions](#phase-4-decisions): Tycho, Ymir and Halla.
 - [ ] With no player cap, how do we limit what each client must receive?
-- [ ] Are there other maneuvers an employee can fly alone, beyond de-orbiting, leaving a sphere of influence and homing in on a new one?
-- [ ] How do space farms work: size, power use, yield and how much warning there is before a failure?
-- [ ] What latency and packet-loss thresholds make a player ineligible to be host?
+- [x] Are there other maneuvers an employee can fly alone, beyond de-orbiting, leaving a sphere of influence and homing in on a new one? Answered: any hop between a body and its parent or moon, such as Earth to Moon. See below.
+- [x] How do space farms work: size, power use, yield and how much warning there is before a failure? Answered below.
+- [ ] What latency and packet-loss thresholds make a player ineligible to be host? 150 ms and 5% are the working guesses; they have not been tuned with real players.

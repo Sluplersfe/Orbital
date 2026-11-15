@@ -86,6 +86,22 @@ impl Vessel {
             .map(|p| (p.name, p.strength_pa))
     }
 
+    /// Seats on board: pods and habitat modules.
+    pub fn crew_capacity(&self) -> u32 {
+        (0..self.stages.len()).flat_map(|s| self.parts(s)).map(|p| match p.kind {
+            Kind::Pod { crew } | Kind::Habitat { crew, .. } => crew as u32,
+            _ => 0,
+        }).sum()
+    }
+
+    /// Food and water carried (kg).
+    pub fn supplies(&self) -> (f64, f64) {
+        (0..self.stages.len()).flat_map(|s| self.parts(s)).fold((0.0, 0.0), |(f, w), p| match p.kind {
+            Kind::Supply { food_kg, water_kg } => (f + food_kg, w + water_kg),
+            _ => (f, w),
+        })
+    }
+
     pub fn has(&self, f: impl Fn(&Kind) -> bool) -> bool {
         (0..self.stages.len()).any(|s| self.parts(s).any(|p| f(&p.kind)))
     }
@@ -102,7 +118,7 @@ impl Vessel {
             v.push("Vessel is empty.".into());
             return v;
         }
-        if !self.has(|k| matches!(k, Kind::Pod)) {
+        if !self.has(|k| matches!(k, Kind::Pod { .. })) {
             v.push("No pod: nothing to fly or recover.".into());
         }
         if !self.has(|k| matches!(k, Kind::Engine { .. })) {

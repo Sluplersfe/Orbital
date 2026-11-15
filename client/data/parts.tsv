@@ -1,0 +1,44 @@
+# Part catalog and tech tree. '|' separated, '#' comments.
+# id | name | era | cost_rp | mass_kg | max_q_kpa | branch | tier | requires (part ids, or -) | claim (resource, or -) | kind | params
+# branch: propulsion, structures, life_support, automation. Tier 4 (top) needs a rare claim.
+# Mass includes any contents (propellant is separate; supplies are counted in the mass).
+# --- Era 1: suborbital ---
+pod1     | Mk1 Pod            | 1 | 0   | 800   | 80  | automation   | 1 | -      | -        | pod       | crew=1
+chute1   | Parachute          | 1 | 0   | 100   | 40  | structures   | 1 | -      | -        | parachute |
+spark    | Spark Engine       | 1 | 0   | 1500  | 80  | propulsion   | 1 | -      | -        | engine    | thrust=250,isp_sl=250,isp_vac=285
+tank_s   | Small Tank         | 1 | 0   | 250   | 80  | structures   | 1 | -      | -        | tank      | prop=2250
+tank_m   | Medium Tank        | 1 | 0   | 800   | 70  | structures   | 1 | -      | -        | tank      | prop=7200
+cone1    | Nose Cone          | 1 | 5   | 100   | 80  | structures   | 1 | -      | -        | nosecone  |
+strut1   | Reinforced Ring    | 1 | 10  | 150   | 120 | structures   | 1 | -      | -        | structure |
+# --- Era 2: orbit ---
+vector   | Vector Engine      | 2 | 25 | 3000  | 80  | propulsion   | 2 | -      | -        | engine    | thrust=700,isp_sl=275,isp_vac=315
+vacuum   | Vacuum Engine      | 2 | 25 | 700   | 80  | propulsion   | 2 | -      | -        | engine    | thrust=90,isp_sl=140,isp_vac=360
+tank_l   | Large Tank         | 2 | 15 | 2400  | 60  | structures   | 2 | -      | -        | tank      | prop=21600
+tank_xl  | Huge Tank          | 2 | 30 | 6500  | 55  | structures   | 2 | -      | -        | tank      | prop=58500
+sat1     | Satellite          | 2 | 20 | 500   | 80  | automation   | 2 | -      | -        | payload   |
+crew1    | Crew Capsule       | 2 | 40 | 1800  | 80  | life_support | 1 | -      | -        | pod       | crew=3
+# --- Era 3: stations ---
+dock1    | Docking Port       | 3 | 30 | 150   | 80  | automation   | 1 | -      | -        | docking   |
+core1    | Station Core       | 3 | 50 | 1600 | 60  | structures   | 2 | dock1  | -        | core      |
+solar1   | Solar Array        | 3 | 25 | 200 | 40  | automation   | 2 | -      | -        | solar     | kw=20
+batt1    | Battery            | 3 | 20 | 250 | 60  | automation   | 2 | -      | -        | battery   | kwh=50
+hab1     | Habitat Module     | 3 | 60 | 2000 | 60  | life_support | 2 | core1  | -        | habitat   | crew=4,recycle=0.3
+supply1  | Supply Pod         | 3 | 25 | 650 | 60  | life_support | 1 | -      | -        | supply    | food=200,water=300
+depot1   | Fuel Depot         | 3 | 70 | 1200 | 60  | propulsion   | 2 | core1  | -        | depot     | prop=60000
+asm1     | Assembly Bay       | 3 | 80 | 1400 | 60  | structures   | 3 | core1  | -        | assembly  |
+# --- Era 4: Moon and asteroids ---
+descent1 | Lander Engine      | 4 | 60 | 900   | 80  | propulsion   | 2 | vacuum | -        | engine    | thrust=150,isp_sl=150,isp_vac=340
+survey1  | Survey Gear        | 4 | 70 | 200   | 80  | automation   | 3 | dock1  | -        | survey    |
+crew_tr  | Crew Training      | 4 | 60  | 0     | 0   | life_support | 2 | hab1   | -        | node      | grant=employees
+farm1    | Space Farm         | 4 | 110 | 2500 | 50  | life_support | 3 | hab1   | -        | farm      | food=40
+isru1    | ISRU Plant         | 4 | 120 | 1800 | 50  | propulsion   | 3 | depot1 | water_ice | isru     | prop=600
+tank_h   | Heavy Tank         | 4 | 100 | 12000 | 50  | structures   | 3 | tank_xl | metals  | tank      | prop=108000
+alloy1   | Alloy Ring         | 4 | 80  | 120   | 300 | structures   | 3 | strut1 | metals   | structure |
+# --- Era 5: planets ---
+nerva    | Nuclear Thermal    | 5 | 220 | 7000  | 80  | propulsion   | 3 | vacuum | water_ice | engine   | thrust=250,isp_sl=330,isp_vac=900
+ion1     | Ion Drive          | 5 | 200 | 800   | 60  | propulsion   | 3 | vacuum | platinum | engine    | thrust=12,isp_sl=1800,isp_vac=4500
+meth1    | Methalox Engine    | 5 | 150 | 2500  | 80  | propulsion   | 3 | vector | carbon   | engine    | thrust=900,isp_sl=300,isp_vac=350
+fusion1  | Fusion Torch       | 5 | 450 | 20000 | 60  | propulsion   | 4 | nerva  | helium3  | engine    | thrust=400,isp_sl=1500,isp_vac=3000
+comp1    | Exotic Hull Tank   | 5 | 400 | 24000 | 120 | structures   | 4 | tank_h | exotic   | tank      | prop=400000
+habl     | Deep-Space Habitat | 5 | 400 | 6000 | 60  | life_support | 4 | hab1,farm1 | platinum | habitat | crew=12,recycle=0.9
+ai1      | Flight AI          | 5 | 350 | 0     | 0   | automation   | 4 | survey1 | exotic  | node      | grant=autopilot

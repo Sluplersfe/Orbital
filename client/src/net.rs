@@ -115,6 +115,24 @@ impl NetClient {
         self.send(Msg::SeatClaim(pb::SeatClaim { ship_id, role: role as i32 }))
     }
 
+    /// Report a first-time award; the server pays it once to the whole group.
+    pub fn award(&self, key: &str, points: u32) -> io::Result<()> {
+        self.program_event(pb::program_event::Event::Award(pb::ProgramAward { key: key.into(), points }))
+    }
+
+    /// Ask to buy a part with the group's research points.
+    pub fn unlock(&self, part: &str, cost: u32) -> io::Result<()> {
+        self.program_event(pb::program_event::Event::Unlock(pb::ProgramUnlock { part: part.into(), cost }))
+    }
+
+    pub fn claim_resource(&self, resource: &str) -> io::Result<()> {
+        self.program_event(pb::program_event::Event::Claim(pb::ProgramClaim { resource: resource.into() }))
+    }
+
+    fn program_event(&self, event: pb::program_event::Event) -> io::Result<()> {
+        self.send(Msg::ProgramEvent(pb::ProgramEvent { event: Some(event) }))
+    }
+
     pub fn send_state(&self, s: pb::ShipState) -> io::Result<()> {
         self.send_datagram(Some(s))
     }
@@ -160,13 +178,17 @@ pub struct World {
     pub my_ship: Option<u64>,
     pub error: String,
     pub closed: bool,
+    /// The group's shared research, as last told by the server.
+    pub program: pb::ProgramState,
+    /// Short lines about what the group just did ("bob unlocked hab1").
+    pub notes: Vec<String>,
     clock: f64,
     clock_at: Option<Instant>,
 }
 
 impl World {
     pub fn new(ack: &pb::JoinAck) -> Self {
-        let mut w = Self { me: ack.player.clone(), host: ack.host.clone(), ..Default::default() };
+        let mut w = Self { me: ack.player.clone(), host: ack.host.clone(), program: ack.program.clone().unwrap_or_default(), ..Default::default() };
         w.sync_clock(ack.world_time);
         w
     }
@@ -195,6 +217,16 @@ impl World {
                 Msg::Ping(p) => self.sync_clock(p.world_time),
                 Msg::HostChange(h) => self.host = h.new_host,
                 Msg::Error(e) => self.error = e.text,
+                Msg::ProgramUpdate(u) => {
+                    if let Some(st) = u.state {
+                        if st.version >= self.program.version {
+                            self.program = st;
+                        }
+                    }
+                    if !u.note.is_empty() {
+                        self.notes.push(u.note);
+                    }
+                }
                 Msg::Roster(r) => {
                     self.host = r.host.clone();
                     self.sync_clock(r.world_time);

@@ -49,7 +49,81 @@ type Server struct {
 	ships    map[uint64]*ship
 	nextShip uint64
 	host     string
-	stations []byte // opaque station state from the latest host upload
+	stations []byte // station state from the latest host upload; the client owns its meaning
+	prog     program
+}
+
+// program is the group's shared research. The server is the only writer.
+type program struct {
+	rp         uint32
+	unlocked   map[string]bool
+	milestones map[string]bool
+	claims     map[string]bool
+	version    uint64
+}
+
+// maxAward bounds a single first-time award, so a buggy client cannot mint research.
+const maxAward = 1000
+
+func newProgram() program {
+	return program{unlocked: map[string]bool{}, milestones: map[string]bool{}, claims: map[string]bool{}}
+}
+
+func keys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (p *program) state() *pb.ProgramState {
+	return &pb.ProgramState{Rp: p.rp, Unlocked: keys(p.unlocked), Milestones: keys(p.milestones), Claims: keys(p.claims), Version: p.version}
+}
+
+// apply runs one event. It returns a note for the group, or "" when nothing changed.
+func (p *program) apply(player string, ev *pb.ProgramEvent) (string, error) {
+	switch e := ev.Event.(type) {
+	case *pb.ProgramEvent_Award:
+		a := e.Award
+		if a.Key == "" || a.Points > maxAward {
+			return "", errors.New("bad award")
+		}
+		if p.milestones[a.Key] {
+			return "", nil // someone already earned it
+		}
+		p.milestones[a.Key] = true
+		p.rp += a.Points
+		p.version++
+		return fmt.Sprintf("%s: +%d (%s)", player, a.Points, a.Key), nil
+	case *pb.ProgramEvent_Unlock:
+		u := e.Unlock
+		if u.Part == "" {
+			return "", errors.New("bad unlock")
+		}
+		if p.unlocked[u.Part] {
+			return "", errors.New("already unlocked")
+		}
+		if p.rp < u.Cost {
+			return "", fmt.Errorf("need %d research points, the group has %d", u.Cost, p.rp)
+		}
+		p.rp -= u.Cost
+		p.unlocked[u.Part] = true
+		p.version++
+		return fmt.Sprintf("%s unlocked %s", player, u.Part), nil
+	case *pb.ProgramEvent_Claim:
+		if e.Claim.Resource == "" {
+			return "", errors.New("bad claim")
+		}
+		if p.claims[e.Claim.Resource] {
+			return "", nil
+		}
+		p.claims[e.Claim.Resource] = true
+		p.version++
+		return fmt.Sprintf("%s claimed %s", player, e.Claim.Resource), nil
+	}
+	return "", errors.New("empty program event")
 }
 
 type client struct {
@@ -92,7 +166,7 @@ func Listen(cfg Config) (*Server, error) {
 	}
 	return &Server{
 		cfg: cfg, sess: cfg.Session, tcp: tcp, udp: udp, done: make(chan struct{}),
-		clients: map[string]*client{}, keys: map[string]string{}, ships: map[uint64]*ship{},
+		clients: map[string]*client{}, keys: map[string]string{}, ships: map[uint64]*ship{}, prog: newProgram(),
 	}, nil
 }
 
@@ -153,7 +227,7 @@ func (s *Server) handleConn(c net.Conn) {
 
 	s.mu.Lock()
 	host, _ := s.sess.Host()
-	ack := &pb.JoinAck{Ok: true, Player: p.Name, Host: host, WorldTime: s.sess.Clock(), UdpKey: cl.key}
+	ack := &pb.JoinAck{Ok: true, Player: p.Name, Host: host, WorldTime: s.sess.Clock(), UdpKey: cl.key, Program: s.prog.state()}
 	if host == p.Name {
 		ack.Snapshot = s.snapshot()
 	}
@@ -230,6 +304,14 @@ func (s *Server) handle(cl *client, env *pb.Envelope) error {
 			delete(s.ships, sh.id)
 		}
 		s.broadcastRoster()
+	case *pb.Envelope_ProgramEvent:
+		note, err := s.prog.apply(cl.name, m.ProgramEvent)
+		if err != nil {
+			return err
+		}
+		if note != "" {
+			s.broadcastProgram(note)
+		}
 	case *pb.Envelope_HostSnapshot:
 		if cl.name != s.host {
 			return errors.New("only the host uploads snapshots")
@@ -331,6 +413,13 @@ func (s *Server) checkHost() {
 
 // snapshot is the host-owned world state. Rails come from the server's ship table, so a host
 // that dies without uploading loses nothing but unsynced station state.
+func (s *Server) broadcastProgram(note string) {
+	env := &pb.Envelope{Msg: &pb.Envelope_ProgramUpdate{ProgramUpdate: &pb.ProgramUpdate{State: s.prog.state(), Note: note}}}
+	for _, c := range s.clients {
+		send(c, env)
+	}
+}
+
 func (s *Server) snapshot() *pb.HostSnapshot {
 	snap := &pb.HostSnapshot{WorldTime: s.sess.Clock(), Stations: s.stations}
 	for _, sh := range s.sortedShips() {

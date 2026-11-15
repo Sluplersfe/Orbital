@@ -1,7 +1,10 @@
 //! Orbital client, phase 2: single-player slice (builder, cockpit, flight report, research).
 use bevy::prelude::*;
-use orbital_client::parts::{self, CATALOG};
-use orbital_client::progress::{Progress, ERA_NAMES};
+use orbital_client::parts;
+use orbital_client::autopilot::{Descent, Takeoff};
+use orbital_client::program::{Loc, Program};
+use orbital_client::space::Place;
+use orbital_client::progress::ERA_NAMES;
 use orbital_client::report::FlightReport;
 use orbital_client::sim::{Flight, Status};
 use orbital_client::vessel::{orbit_dv_budget, Vessel};
@@ -14,6 +17,7 @@ struct Online {
     client: NetClient,
     world: World,
     last_send: f64,
+    applied_version: u64,
 }
 
 fn connect_from_env() -> Option<Online> {
@@ -26,7 +30,7 @@ fn connect_from_env() -> Option<Online> {
         Ok(client) => {
             let world = World::new(&client.ack);
             info!("joined {tcp} as {}", world.me);
-            Some(Online { client, world, last_send: 0.0 })
+            Some(Online { client, world, last_send: 0.0, applied_version: 0 })
         }
         Err(e) => {
             error!("could not join {tcp}: {e}");
@@ -38,6 +42,7 @@ fn connect_from_env() -> Option<Online> {
 enum Mode {
     Builder,
     Research,
+    Control,
     Flying(Box<Flight>),
     Report(Box<FlightReport>, Vec<String>),
 }
@@ -45,7 +50,12 @@ enum Mode {
 #[derive(Resource)]
 struct Game {
     mode: Mode,
-    progress: Progress,
+    program: Program,
+    /// Who we are in the program, and when the current flight left the pad (world seconds).
+    me: String,
+    t0: f64,
+    ship_pick: usize,
+    dest_pick: usize,
     vessel: Vessel,
     stage: usize,
     pick: usize,
@@ -60,7 +70,9 @@ fn main() {
     let mut vessel = Vessel::default();
     vessel.stages = vec![vec!["spark", "tank_m"], vec!["pod1", "chute1"]];
     let mut app = App::new();
-    if let Some(online) = connect_from_env() {
+    let online = connect_from_env();
+    let me = online.as_ref().map_or_else(me_name, |o| o.world.me.clone());
+    if let Some(online) = online {
         app.insert_resource(online);
     }
     app
@@ -69,12 +81,27 @@ fn main() {
             ..default()
         }))
         .insert_resource(Game {
-            mode: Mode::Builder, progress: Progress::new(), vessel, stage: 0, pick: 0, warp: 1.0,
+            mode: Mode::Builder, program: new_program(&me), me, t0: 0.0, ship_pick: 0, dest_pick: 0, vessel, stage: 0, pick: 0, warp: 1.0,
             note: "Welcome. Build a rocket, then press L to launch.".into(),
         })
         .add_systems(Startup, setup)
         .add_systems(Update, (net_sync, input, fly, hud, draw).chain())
         .run();
+}
+
+fn me_name() -> String {
+    std::env::var("ORBITAL_NAME").unwrap_or_else(|_| "you".into())
+}
+
+fn new_program(me: &str) -> Program {
+    let mut p = Program::new();
+    let _ = p.add_player(me);
+    p
+}
+
+/// Who rides a launch: the player, if they are at Earth and the vessel has a seat.
+fn launch_crew(g: &Game) -> Vec<String> {
+    if g.vessel.crew_capacity() > 0 && g.program.locate(&g.me) == Loc::Earth { vec![g.me.clone()] } else { vec![] }
 }
 
 fn setup(mut commands: Commands) {
@@ -88,7 +115,7 @@ fn setup(mut commands: Commands) {
 }
 
 fn unlocked_parts(g: &Game) -> Vec<&'static parts::Part> {
-    CATALOG.iter().filter(|p| g.progress.has(p.id)).collect()
+    parts::catalog().iter().filter(|p| g.program.progress.has(p.id) && p.placeable()).collect()
 }
 
 fn input(keys: Res<ButtonInput<KeyCode>>, mut g: ResMut<Game>, online: Option<Res<Online>>) {
@@ -117,12 +144,16 @@ fn input(keys: Res<ButtonInput<KeyCode>>, mut g: ResMut<Game>, online: Option<Re
                 if g.vessel.stages.len() > 1 { g.vessel.stages.remove(g.stage); g.stage = g.stage.min(g.vessel.stages.len() - 1); }
             }
             if pressed(KeyCode::KeyR) { g.mode = Mode::Research; g.pick = 0; }
+            if pressed(KeyCode::KeyM) { g.mode = Mode::Control; g.note.clear(); }
             if pressed(KeyCode::KeyL) {
                 g.vessel.stages.retain(|s| !s.is_empty());
                 let errs = g.vessel.validate();
+                let crew = launch_crew(g);
+                let errs = if errs.is_empty() { g.program.check_launch_crew(&g.vessel, &crew).err().into_iter().collect() } else { errs };
                 if errs.is_empty() {
                     g.warp = 1.0;
-                    g.mode = Mode::Flying(Box::new(Flight::new(g.vessel.clone())));
+                    g.t0 = g.program.time;
+                    g.mode = Mode::Flying(Box::new(Flight::launch(g.vessel.clone(), g.t0)));
                     if let Some(o) = &online {
                         let _ = o.client.claim(0, pb::CrewRole::Pilot);
                     }
@@ -132,18 +163,22 @@ fn input(keys: Res<ButtonInput<KeyCode>>, mut g: ResMut<Game>, online: Option<Re
             }
         }
         Mode::Research => {
-            let locked: Vec<_> = CATALOG.iter().filter(|p| !g.progress.has(p.id)).collect();
+            let locked: Vec<_> = parts::catalog().iter().filter(|p| !g.program.progress.has(p.id)).collect();
             if pressed(KeyCode::ArrowDown) && !locked.is_empty() { g.pick = (g.pick + 1) % locked.len(); }
             if pressed(KeyCode::ArrowUp) && !locked.is_empty() { g.pick = (g.pick + locked.len() - 1) % locked.len(); }
             if pressed(KeyCode::Enter) {
                 if let Some(p) = locked.get(g.pick) {
-                    g.note = if g.progress.unlock(p.id) { format!("Unlocked {}.", p.name) }
-                        else if p.era > g.progress.era() { format!("{} belongs to era {}: finish the era {} goal first.", p.name, p.era, g.progress.era()) }
-                        else { format!("Need {} research points.", p.cost_rp) };
+                    g.note = match (g.program.progress.blocker(p.id), &online) {
+                        (Some(why), _) => why,
+                        // Online the server spends the group's points; our copy updates when it answers.
+                        (None, Some(o)) => { let _ = o.client.unlock(p.id, p.cost_rp); format!("Asked the server to unlock {}.", p.name) }
+                        (None, None) => { g.program.progress.unlock(p.id); format!("Unlocked {}.", p.name) }
+                    };
                 }
             }
             if pressed(KeyCode::Escape) || pressed(KeyCode::KeyR) { g.mode = Mode::Builder; g.pick = 0; }
         }
+        Mode::Control => control_input(g, &keys),
         Mode::Flying(f) => {
             let held = |k| keys.pressed(k);
             if held(KeyCode::KeyZ) { f.set_throttle(f.throttle + 0.01); }
@@ -171,6 +206,19 @@ fn net_sync(time: Res<Time>, mut g: ResMut<Game>, online: Option<ResMut<Online>>
     let o = &mut *o;
     for ev in o.client.poll() {
         o.world.apply(ev);
+    }
+    for (key, pts) in std::mem::take(&mut g.program.progress.new_awards) {
+        let _ = o.client.award(key, pts);
+    }
+    if o.world.program.version != o.applied_version {
+        o.applied_version = o.world.program.version;
+        let p = &o.world.program;
+        g.program.progress.apply_shared(p.rp, &p.unlocked, &p.milestones, &p.claims);
+        g.program.progress.new_awards.clear();
+    }
+    if let Some(n) = o.world.notes.pop() {
+        g.note = n;
+        o.world.notes.clear();
     }
     if !o.world.error.is_empty() {
         g.note = format!("Server: {}", std::mem::take(&mut o.world.error));
@@ -213,11 +261,15 @@ fn fly(time: Res<Time>, mut g: ResMut<Game>, online: Option<Res<Online>>) {
     let step = if warp > 1.0 { 0.25 } else { 0.02 };
     f.advance(dt, step);
     if f.status.is_over() {
-        let report = FlightReport::from_flight(f);
-        let (pts, why) = g.progress.award(&report);
-        let mut lines = vec![format!("Research: +{pts} points ({} total)", g.progress.rp)];
-        lines.extend(why);
-        g.mode = Mode::Report(Box::new(report), lines);
+        let name = format!("Ship {}", g.program.next_id);
+        let crew = if f.vessel.crew_capacity() > 0 && g.program.locate(&g.me) == Loc::Earth { vec![g.me.clone()] } else { vec![] };
+        let res = g.program.finish_flight(&name, f, g.t0, &crew);
+        let mut lines = vec![format!("Research: {} points in total", g.program.progress.rp)];
+        lines.extend(res.awards);
+        if res.ship.is_some() {
+            lines.push("The ship is in orbit: press M for mission control.".into());
+        }
+        g.mode = Mode::Report(Box::new(res.report), lines);
     }
 }
 
@@ -227,13 +279,14 @@ fn hud(g: Res<Game>, online: Option<Res<Online>>, mut q: Query<&mut Text, With<H
     text.0 = match &g.mode {
         Mode::Builder => builder_text(&g),
         Mode::Research => research_text(&g),
+        Mode::Control => control_text(&g),
         Mode::Flying(f) => cockpit_text(f, g.warp),
         Mode::Report(r, lines) => report_text(r, lines),
     } + &net;
 }
 
 fn builder_text(g: &Game) -> String {
-    let mut s = format!("BUILDER   Era {} ({})   Research points: {}\n\n", g.progress.era(), ERA_NAMES[g.progress.era() as usize - 1], g.progress.rp);
+    let mut s = format!("BUILDER   Era {} ({})   Research points: {}\n\n", g.program.progress.era(), ERA_NAMES[g.program.progress.era() as usize - 1], g.program.progress.rp);
     let avail = unlocked_parts(g);
     s += "Parts (Left/Right to pick, Enter to add to stage):\n";
     for (i, p) in avail.iter().enumerate() {
@@ -256,13 +309,13 @@ fn builder_text(g: &Game) -> String {
     let dv = g.vessel.total_dv();
     s += &format!("\nTotal delta-v {:.0} m/s   Orbit needs about {:.0} m/s   Wet mass {:.0} kg\n", dv, orbit_dv_budget(), g.vessel.total_mass());
     if let Some((n, q)) = g.vessel.weakest() { s += &format!("Weakest part: {} ({:.0} kPa max-Q)\n", n, q / 1e3); }
-    s += &format!("\n{}\n\nL launch   R research", g.note);
+    s += &format!("\n{}\n\nL launch   R research   M mission control", g.note);
     s
 }
 
 fn research_text(g: &Game) -> String {
-    let mut s = format!("RESEARCH   Points: {}   Era {}\n\nLocked parts (Up/Down, Enter to unlock, Esc back):\n", g.progress.rp, g.progress.era());
-    for (i, p) in CATALOG.iter().filter(|p| !g.progress.has(p.id)).enumerate() {
+    let mut s = format!("RESEARCH   Points: {}   Era {}\n\nLocked parts (Up/Down, Enter to unlock, Esc back):\n", g.program.progress.rp, g.program.progress.era());
+    for (i, p) in parts::catalog().iter().filter(|p| !g.program.progress.has(p.id)).enumerate() {
         s += &format!(" {} {:<16} era {}  {:>3} RP\n", if i == g.pick { ">" } else { " " }, p.name, p.era, p.cost_rp);
     }
     s += "\nEarn points: first liftoff, 30 km, space, recovery from space, orbit, and every flight returns data.\n";
@@ -322,4 +375,97 @@ fn draw(g: Res<Game>, online: Option<Res<Online>>, mut gizmos: Gizmos, windows: 
             gizmos.circle_2d(Isometry2d::from_translation(q), 3.0, Color::srgb(0.3, 1.0, 0.4));
         }
     }
+}
+
+fn place_text(p: &Place) -> String {
+    match p {
+        Place::Orbit(o) => format!("orbit of {} at {:.0} km", o.body, (o.r - o.body().radius) / 1e3),
+        Place::Landed { body, .. } => format!("landed on {body}"),
+        Place::Docked { station } => format!("docked to station {station}"),
+        Place::Transit { to, .. } => format!("on the way to {to}"),
+        Place::Destroyed => "destroyed".into(),
+    }
+}
+
+fn control_text(g: &Game) -> String {
+    let p = &g.program;
+    let era = p.progress.era();
+    let mut s = format!("MISSION CONTROL   Era {} ({})   Research {}   T+{:.1} h   You: {} at {:?}\n", era, ERA_NAMES[era as usize - 1], p.progress.rp, p.time / 3600.0, g.me, p.locate(&g.me));
+    s += &format!("Claims: {}\n\nStations:\n", if p.progress.claims.is_empty() { "none".into() } else { p.progress.claims.iter().cloned().collect::<Vec<_>>().join(", ") });
+    for st in &p.stations {
+        s += &format!("  #{} {}  crew {:?}  fuel {:.0} kg  supplies {:.0} h  power {}\n", st.id, st.name, st.crew, st.prop_kg, st.supply_hours().min(9999.0), if st.powered() { "ok" } else { "OUT" });
+    }
+    s += "\nShips (Up/Down):\n";
+    for (i, sh) in p.ships.iter().enumerate() {
+        let mark = if i == g.ship_pick % p.ships.len().max(1) { ">" } else { " " };
+        s += &format!(" {mark} #{} {}  {}  crew {:?}  dv {:.0} m/s\n", sh.id, sh.name, place_text(&sh.place), sh.crew, sh.dv_remaining());
+    }
+    let dests = destinations(g);
+    if let Some(d) = dests.get(g.dest_pick % dests.len().max(1)) {
+        s += &format!("\nDestination (Left/Right): {}\n", d);
+    }
+    s += "\nB found station   D dock   A attach   U undock   F refuel   G board/leave ship   T transfer   W wait 1 h\n";
+    s += "L land   K take off   V survey   Z teleport home   Esc back\n\nLog:\n";
+    for l in p.log.iter().rev().take(8).rev() { s += &format!("  {l}\n"); }
+    s += &format!("\n{}", g.note);
+    s
+}
+
+fn destinations(g: &Game) -> Vec<&'static str> {
+    let era = g.program.progress.era();
+    orbital_client::bodies::bodies().iter().filter(|b| b.id != "sun" && b.min_era <= era).map(|b| b.id).collect()
+}
+
+fn control_input(g: &mut Game, keys: &ButtonInput<KeyCode>) {
+    let pressed = |k| keys.just_pressed(k);
+    let nships = g.program.ships.len();
+    if pressed(KeyCode::ArrowDown) && nships > 0 { g.ship_pick = (g.ship_pick + 1) % nships; }
+    if pressed(KeyCode::ArrowUp) && nships > 0 { g.ship_pick = (g.ship_pick + nships - 1) % nships; }
+    let nd = destinations(g).len().max(1);
+    if pressed(KeyCode::ArrowRight) { g.dest_pick = (g.dest_pick + 1) % nd; }
+    if pressed(KeyCode::ArrowLeft) { g.dest_pick = (g.dest_pick + nd - 1) % nd; }
+    if pressed(KeyCode::Escape) { g.mode = Mode::Builder; return; }
+    let ship = g.program.ships.get(g.ship_pick % nships.max(1)).map(|s| s.id);
+    let station = g.program.stations.first().map(|s| s.id);
+    let me = g.me.clone();
+    let say = |g: &mut Game, r: Result<String, String>| g.note = r.unwrap_or_else(|e| e);
+    if pressed(KeyCode::KeyW) { g.program.tick(3600.0); g.note = "An hour passes.".into(); }
+    if pressed(KeyCode::KeyZ) { let r = g.program.teleport_to_earth(&me).map(|_| "Back at Earth.".into()); say(g, r); }
+    let Some(id) = ship else { return };
+    if pressed(KeyCode::KeyB) { let r = g.program.found_station(id, &format!("Station {id}")).map(|s| format!("Founded station {s}.")); say(g, r); }
+    if pressed(KeyCode::KeyD) {
+        let r = match station { Some(st) => g.program.rendezvous(id, st).map(|dv| format!("Docked, {dv:.0} m/s spent.")), None => Err("There is no station.".into()) };
+        say(g, r);
+    }
+    if pressed(KeyCode::KeyA) { let r = g.program.attach(id).map(|_| "Folded into the station.".into()); say(g, r); }
+    if pressed(KeyCode::KeyU) { let r = g.program.undock(id).map(|_| "Undocked.".into()); say(g, r); }
+    if pressed(KeyCode::KeyF) { let r = g.program.refuel(id).map(|k| format!("Took {k:.0} kg of propellant.")); say(g, r); }
+    if pressed(KeyCode::KeyG) {
+        let to = match g.program.locate(&me) { Loc::Station(_) => Some(Loc::Ship(id)), Loc::Ship(_) => station.map(Loc::Station), Loc::Earth => None };
+        let r = match to { Some(t) => g.program.move_crew(&me, t).map(|_| "Moved.".into()), None => Err("You are at Earth: launch, or teleport to a friend.".into()) };
+        say(g, r);
+    }
+    if pressed(KeyCode::KeyT) {
+        let dests = destinations(g);
+        let r = match dests.get(g.dest_pick % dests.len().max(1)) {
+            Some(d) => g.program.transfer(id, d).map(|eta| { let t = eta + 60.0; g.program.tick(t); format!("Arrived after {:.1} h.", t / 3600.0) }),
+            None => Err("Nowhere to go.".into()),
+        };
+        say(g, r);
+    }
+    if pressed(KeyCode::KeyL) {
+        let r = g.program.begin_descent(id).and_then(|(mut f, t0)| {
+            Descent::new().run(&mut f, 6_000.0);
+            g.program.finish_descent(id, &f, t0).map(|r| r.report.headline)
+        });
+        say(g, r);
+    }
+    if pressed(KeyCode::KeyK) {
+        let r = g.program.begin_takeoff(id).and_then(|(mut f, t0)| {
+            Takeoff::new(60_000.0).run(&mut f, 3_000.0);
+            g.program.finish_ascent(id, &f, t0).map(|r| r.report.headline)
+        });
+        say(g, r);
+    }
+    if pressed(KeyCode::KeyV) { let r = g.program.survey(id).map(|l| l.join(" ")); say(g, r); }
 }
