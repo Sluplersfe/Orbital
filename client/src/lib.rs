@@ -4,6 +4,7 @@ pub mod bodies;
 pub mod net;
 pub mod orbit;
 pub mod parts;
+pub mod program;
 pub mod progress;
 pub mod rendezvous;
 pub mod report;

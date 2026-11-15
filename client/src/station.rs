@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 pub const FOOD_KG_H: f64 = 10.0;
 pub const WATER_KG_H: f64 = 15.0;
 /// Free resupply into a depot at Earth (kg per world hour).
-pub const DEPOT_RESUPPLY_KG_H: f64 = 4_000.0;
+pub const DEPOT_RESUPPLY_KG_H: f64 = 20_000.0;
 /// Seconds of power deficit before life support fails.
 pub const BROWNOUT_LIMIT_S: f64 = 600.0;
 /// A warning goes out when a store holds less than this many hours of supply.
@@ -342,7 +342,7 @@ mod tests {
         assert_eq!(st.load_kw(), 14.0);
         assert!(st.power_kw() > 0.0 && st.powered());
         assert_eq!(st.housing(), 4);
-        assert_eq!(st.food, 400.0);
+        assert_eq!(st.food, 200.0);
         let mut st = st;
         for n in ["a", "b", "c", "d"] {
             st.add_crew(n).unwrap();
@@ -356,13 +356,13 @@ mod tests {
         st.add_crew("ann").unwrap();
         st.add_crew("bob").unwrap();
         let claims = BTreeSet::new();
-        // 2 people, recycle 0.3: 2*10*0.7 = 14 food/h, 21 water/h; 600 water lasts ~28 h.
+        // 2 people, recycle 0.3: 2*10*0.7 = 14 food/h, 21 water/h; 300 water lasts ~14 h.
         let h = st.supply_hours();
-        assert!((h - 600.0 / 21.0).abs() < 0.1, "{h}");
+        assert!((h - 300.0 / 21.0).abs() < 0.1, "{h}");
         let ev = st.tick(3600.0 * 10.0, &claims);
         assert!(ev.is_empty(), "{ev:?}");
-        assert!((st.water - (600.0 - 210.0)).abs() < 1.0);
-        assert!(st.tick(3600.0 * 16.0, &claims).is_empty());
+        assert!((st.water - (300.0 - 210.0)).abs() < 1.0);
+        assert!(st.tick(3600.0 * 1.5, &claims).is_empty());
         let ev = st.tick(3600.0, &claims);
         assert!(ev.iter().any(|e| matches!(e, Event::Warning(w) if w.contains("supplies"))), "{ev:?}");
         let ev = st.tick(3600.0 * 2.0, &claims);
@@ -378,12 +378,12 @@ mod tests {
         assert!(st.recycle() > 0.69, "{}", st.recycle()); // 0.3 hab + 0.4 farm
         assert_eq!(st.supply_hours(), f64::INFINITY.min(st.supply_hours()));
         // One crew eats 10*0.3 = 3 food/h and the farm grows 40: food never runs out.
-        // Water: 15*0.3 = 4.5 kg/h from 600 kg is still finite.
+        // Water: 15*0.3 = 4.5 kg/h from 300 kg is still finite.
         let h = st.supply_hours();
-        assert!((h - 600.0 / 4.5).abs() < 0.5, "{h}");
+        assert!((h - 300.0 / 4.5).abs() < 0.5, "{h}");
         let claims = BTreeSet::new();
         st.tick(3600.0 * 20.0, &claims);
-        assert!(st.food >= 400.0, "{}", st.food);
+        assert!(st.food >= 200.0, "{}", st.food);
         assert!(st.crew.len() == 1);
     }
 
