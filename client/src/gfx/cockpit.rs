@@ -287,8 +287,8 @@ pub fn animate(
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     mut controls: ResMut<Controls>,
-    mut roots: Query<(&mut Transform, &mut Visibility, Has<CockpitRoot>), Or<(With<CockpitRoot>, With<CabinRoot>)>>,
     mut parts: ParamSet<(
+        Query<(&mut Transform, &mut Visibility, Has<CockpitRoot>), Or<(With<CockpitRoot>, With<CabinRoot>)>>,
         Query<&mut Transform, With<Navball>>,
         Query<&mut Transform, With<Lever>>,
         Query<&mut Transform, With<Cover>>,
@@ -300,7 +300,7 @@ pub fn animate(
     mut figures: Query<(&Figure, &mut Visibility), (Without<CockpitRoot>, Without<CabinRoot>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for (mut tf, mut vis, is_cockpit) in &mut roots {
+    for (mut tf, mut vis, is_cockpit) in &mut parts.p0() {
         let shown = if is_cockpit { view.shot == Shot::Cockpit } else { view.shot == Shot::Cabin };
         *vis = if shown { Visibility::Visible } else { Visibility::Hidden };
         *tf = Transform::from_rotation(view.seat_rot);
@@ -327,30 +327,30 @@ pub fn animate(
     // The ball's texture has its sky pole on local +Z (Bevy's UV sphere).
     let horizon = Quat::from_mat3(&Mat3::from_cols(east, Vec3::Z, up));
     let mirror = view.seat_rot * Quat::from_rotation_y(PI);
-    if let Ok(mut tf) = parts.p0().single_mut() {
+    if let Ok(mut tf) = parts.p1().single_mut() {
         tf.rotation = dash_rot().inverse() * mirror.inverse() * horizon;
     }
-    if let Ok(mut tf) = parts.p1().single_mut() {
+    if let Ok(mut tf) = parts.p2().single_mut() {
         tf.rotation = Quat::from_rotation_x(0.6 - 1.2 * f.throttle as f32);
     }
-    if let Ok(mut tf) = parts.p2().single_mut() {
+    if let Ok(mut tf) = parts.p3().single_mut() {
         let target = if controls.cover_open { -2.0 } else { 0.0 };
         let cur = tf.rotation.to_euler(EulerRot::XYZ).0;
         tf.rotation = Quat::from_rotation_x(cur + (target - cur) * (time.delta_secs() * 10.0).min(1.0));
     }
-    if let Ok(mut tf) = parts.p3().single_mut() {
+    if let Ok(mut tf) = parts.p4().single_mut() {
         tf.rotation = Quat::from_rotation_x(if f.chute_deployed { 0.5 } else { -0.5 });
     }
     let held = |k| keys.pressed(k);
     let input = if held(KeyCode::KeyD) || held(KeyCode::ArrowRight) { 1.0 } else if held(KeyCode::KeyA) || held(KeyCode::ArrowLeft) { -1.0 } else { 0.0 };
     controls.stick = if input != 0.0 { input } else { controls.stick * (1.0 - (time.delta_secs() * 6.0).min(1.0)) };
-    if let Ok(mut tf) = parts.p4().single_mut() {
+    if let Ok(mut tf) = parts.p5().single_mut() {
         tf.rotation = Quat::from_rotation_z(-0.3 * controls.stick);
     }
     let alt = f.alt() as f32;
     let cap = f.vessel.stage_prop(f.stage).max(1.0) as f32;
     let strength = f.vessel.weakest().map_or(80_000.0, |(_, q)| q) as f32;
-    for (gauge, mut tf) in &mut parts.p5() {
+    for (gauge, mut tf) in &mut parts.p6() {
         let v = match gauge {
             Gauge::AltFine => (alt.max(0.0) % 10_000.0) / 10_000.0,
             Gauge::AltCoarse => alt / 200_000.0,
