@@ -14,6 +14,7 @@ message RailShip {
   Vec3d position = 2;
   Vec3d velocity = 3;
   double epoch = 4;
+  string body = 5;  // body the position and velocity are relative to; empty means Earth
 }
 
 message Join { string token = 1; }
@@ -26,6 +27,7 @@ message JoinAck {
   double world_time = 5;
   bytes udp_key = 6;          // must prefix every UDP datagram
   HostSnapshot snapshot = 7;  // set when the joiner is host
+  ProgramState program = 8;   // shared research state at join time
 }
 
 // Server-originated health probe; the client echoes the nonce back as Pong.
@@ -42,8 +44,9 @@ message ShipState {
 }
 
 // Host-owned world state: uploaded by the host periodically, cached by the server and handed to
-// the next host, so an abrupt host death loses at most one upload interval. Stations are opaque
-// until phase 4.
+// the next host, so an abrupt host death loses at most one upload interval. `stations` is the
+// client's own serialisation of every station (the client owns those rules; the server only
+// stores and hands them on).
 message HostSnapshot {
   double world_time = 1;
   repeated RailShip rails = 2;
@@ -80,6 +83,32 @@ message Roster {
   double world_time = 4;
 }
 
+// The group's shared research. The server is the single writer, so two players earning the same
+// first milestone at once are paid once, and the points cannot be spent twice.
+message ProgramState {
+  uint32 rp = 1;
+  repeated string unlocked = 2;    // parts bought with research (free starting parts are implicit)
+  repeated string milestones = 3;  // first-time awards already paid
+  repeated string claims = 4;      // resources claimed by being there
+  uint64 version = 5;              // increases with every change
+}
+
+// A client reports what happened; the server decides whether it counts.
+message ProgramEvent {
+  oneof event {
+    ProgramAward award = 1;
+    ProgramUnlock unlock = 2;
+    ProgramClaim claim = 3;
+  }
+}
+// A first-time award: paid once per key, to the whole group.
+message ProgramAward { string key = 1; uint32 points = 2; }
+// Buys a part with the group's research points. Rejected if it is owned or unaffordable.
+message ProgramUnlock { string part = 1; uint32 cost = 2; }
+message ProgramClaim { string resource = 1; }
+
+message ProgramUpdate { ProgramState state = 1; string note = 2; }
+
 message Error { string text = 1; }
 
 message Envelope {
@@ -94,6 +123,8 @@ message Envelope {
     SeatRelease seat_release = 8;
     Roster roster = 9;
     Error error = 10;
+    ProgramEvent program_event = 11;
+    ProgramUpdate program_update = 12;
   }
 }
 

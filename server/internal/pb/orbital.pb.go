@@ -148,6 +148,7 @@ type RailShip struct {
 	Position      *Vec3D                 `protobuf:"bytes,2,opt,name=position,proto3" json:"position,omitempty"`
 	Velocity      *Vec3D                 `protobuf:"bytes,3,opt,name=velocity,proto3" json:"velocity,omitempty"`
 	Epoch         float64                `protobuf:"fixed64,4,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	Body          string                 `protobuf:"bytes,5,opt,name=body,proto3" json:"body,omitempty"` // body the position and velocity are relative to; empty means Earth
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -210,6 +211,13 @@ func (x *RailShip) GetEpoch() float64 {
 	return 0
 }
 
+func (x *RailShip) GetBody() string {
+	if x != nil {
+		return x.Body
+	}
+	return ""
+}
+
 type Join struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
@@ -263,6 +271,7 @@ type JoinAck struct {
 	WorldTime     float64                `protobuf:"fixed64,5,opt,name=world_time,json=worldTime,proto3" json:"world_time,omitempty"`
 	UdpKey        []byte                 `protobuf:"bytes,6,opt,name=udp_key,json=udpKey,proto3" json:"udp_key,omitempty"` // must prefix every UDP datagram
 	Snapshot      *HostSnapshot          `protobuf:"bytes,7,opt,name=snapshot,proto3" json:"snapshot,omitempty"`           // set when the joiner is host
+	Program       *ProgramState          `protobuf:"bytes,8,opt,name=program,proto3" json:"program,omitempty"`             // shared research state at join time
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -342,6 +351,13 @@ func (x *JoinAck) GetUdpKey() []byte {
 func (x *JoinAck) GetSnapshot() *HostSnapshot {
 	if x != nil {
 		return x.Snapshot
+	}
+	return nil
+}
+
+func (x *JoinAck) GetProgram() *ProgramState {
+	if x != nil {
+		return x.Program
 	}
 	return nil
 }
@@ -521,8 +537,9 @@ func (x *ShipState) GetWorldTime() float64 {
 }
 
 // Host-owned world state: uploaded by the host periodically, cached by the server and handed to
-// the next host, so an abrupt host death loses at most one upload interval. Stations are opaque
-// until phase 4.
+// the next host, so an abrupt host death loses at most one upload interval. `stations` is the
+// client's own serialisation of every station (the client owns those rules; the server only
+// stores and hands them on).
 type HostSnapshot struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorldTime     float64                `protobuf:"fixed64,1,opt,name=world_time,json=worldTime,proto3" json:"world_time,omitempty"`
@@ -928,6 +945,385 @@ func (x *Roster) GetWorldTime() float64 {
 	return 0
 }
 
+// The group's shared research. The server is the single writer, so two players earning the same
+// first milestone at once are paid once, and the points cannot be spent twice.
+type ProgramState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rp            uint32                 `protobuf:"varint,1,opt,name=rp,proto3" json:"rp,omitempty"`
+	Unlocked      []string               `protobuf:"bytes,2,rep,name=unlocked,proto3" json:"unlocked,omitempty"`     // parts bought with research (free starting parts are implicit)
+	Milestones    []string               `protobuf:"bytes,3,rep,name=milestones,proto3" json:"milestones,omitempty"` // first-time awards already paid
+	Claims        []string               `protobuf:"bytes,4,rep,name=claims,proto3" json:"claims,omitempty"`         // resources claimed by being there
+	Version       uint64                 `protobuf:"varint,5,opt,name=version,proto3" json:"version,omitempty"`      // increases with every change
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProgramState) Reset() {
+	*x = ProgramState{}
+	mi := &file_orbital_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProgramState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProgramState) ProtoMessage() {}
+
+func (x *ProgramState) ProtoReflect() protoreflect.Message {
+	mi := &file_orbital_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProgramState.ProtoReflect.Descriptor instead.
+func (*ProgramState) Descriptor() ([]byte, []int) {
+	return file_orbital_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *ProgramState) GetRp() uint32 {
+	if x != nil {
+		return x.Rp
+	}
+	return 0
+}
+
+func (x *ProgramState) GetUnlocked() []string {
+	if x != nil {
+		return x.Unlocked
+	}
+	return nil
+}
+
+func (x *ProgramState) GetMilestones() []string {
+	if x != nil {
+		return x.Milestones
+	}
+	return nil
+}
+
+func (x *ProgramState) GetClaims() []string {
+	if x != nil {
+		return x.Claims
+	}
+	return nil
+}
+
+func (x *ProgramState) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+// A client reports what happened; the server decides whether it counts.
+type ProgramEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Event:
+	//
+	//	*ProgramEvent_Award
+	//	*ProgramEvent_Unlock
+	//	*ProgramEvent_Claim
+	Event         isProgramEvent_Event `protobuf_oneof:"event"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProgramEvent) Reset() {
+	*x = ProgramEvent{}
+	mi := &file_orbital_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProgramEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProgramEvent) ProtoMessage() {}
+
+func (x *ProgramEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_orbital_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProgramEvent.ProtoReflect.Descriptor instead.
+func (*ProgramEvent) Descriptor() ([]byte, []int) {
+	return file_orbital_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ProgramEvent) GetEvent() isProgramEvent_Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *ProgramEvent) GetAward() *ProgramAward {
+	if x != nil {
+		if x, ok := x.Event.(*ProgramEvent_Award); ok {
+			return x.Award
+		}
+	}
+	return nil
+}
+
+func (x *ProgramEvent) GetUnlock() *ProgramUnlock {
+	if x != nil {
+		if x, ok := x.Event.(*ProgramEvent_Unlock); ok {
+			return x.Unlock
+		}
+	}
+	return nil
+}
+
+func (x *ProgramEvent) GetClaim() *ProgramClaim {
+	if x != nil {
+		if x, ok := x.Event.(*ProgramEvent_Claim); ok {
+			return x.Claim
+		}
+	}
+	return nil
+}
+
+type isProgramEvent_Event interface {
+	isProgramEvent_Event()
+}
+
+type ProgramEvent_Award struct {
+	Award *ProgramAward `protobuf:"bytes,1,opt,name=award,proto3,oneof"`
+}
+
+type ProgramEvent_Unlock struct {
+	Unlock *ProgramUnlock `protobuf:"bytes,2,opt,name=unlock,proto3,oneof"`
+}
+
+type ProgramEvent_Claim struct {
+	Claim *ProgramClaim `protobuf:"bytes,3,opt,name=claim,proto3,oneof"`
+}
+
+func (*ProgramEvent_Award) isProgramEvent_Event() {}
+
+func (*ProgramEvent_Unlock) isProgramEvent_Event() {}
+
+func (*ProgramEvent_Claim) isProgramEvent_Event() {}
+
+// A first-time award: paid once per key, to the whole group.
+type ProgramAward struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Points        uint32                 `protobuf:"varint,2,opt,name=points,proto3" json:"points,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProgramAward) Reset() {
+	*x = ProgramAward{}
+	mi := &file_orbital_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProgramAward) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProgramAward) ProtoMessage() {}
+
+func (x *ProgramAward) ProtoReflect() protoreflect.Message {
+	mi := &file_orbital_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProgramAward.ProtoReflect.Descriptor instead.
+func (*ProgramAward) Descriptor() ([]byte, []int) {
+	return file_orbital_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ProgramAward) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *ProgramAward) GetPoints() uint32 {
+	if x != nil {
+		return x.Points
+	}
+	return 0
+}
+
+// Buys a part with the group's research points. Rejected if it is owned or unaffordable.
+type ProgramUnlock struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Part          string                 `protobuf:"bytes,1,opt,name=part,proto3" json:"part,omitempty"`
+	Cost          uint32                 `protobuf:"varint,2,opt,name=cost,proto3" json:"cost,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProgramUnlock) Reset() {
+	*x = ProgramUnlock{}
+	mi := &file_orbital_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProgramUnlock) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProgramUnlock) ProtoMessage() {}
+
+func (x *ProgramUnlock) ProtoReflect() protoreflect.Message {
+	mi := &file_orbital_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProgramUnlock.ProtoReflect.Descriptor instead.
+func (*ProgramUnlock) Descriptor() ([]byte, []int) {
+	return file_orbital_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ProgramUnlock) GetPart() string {
+	if x != nil {
+		return x.Part
+	}
+	return ""
+}
+
+func (x *ProgramUnlock) GetCost() uint32 {
+	if x != nil {
+		return x.Cost
+	}
+	return 0
+}
+
+type ProgramClaim struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Resource      string                 `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProgramClaim) Reset() {
+	*x = ProgramClaim{}
+	mi := &file_orbital_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProgramClaim) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProgramClaim) ProtoMessage() {}
+
+func (x *ProgramClaim) ProtoReflect() protoreflect.Message {
+	mi := &file_orbital_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProgramClaim.ProtoReflect.Descriptor instead.
+func (*ProgramClaim) Descriptor() ([]byte, []int) {
+	return file_orbital_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ProgramClaim) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+type ProgramUpdate struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         *ProgramState          `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	Note          string                 `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProgramUpdate) Reset() {
+	*x = ProgramUpdate{}
+	mi := &file_orbital_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProgramUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProgramUpdate) ProtoMessage() {}
+
+func (x *ProgramUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_orbital_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProgramUpdate.ProtoReflect.Descriptor instead.
+func (*ProgramUpdate) Descriptor() ([]byte, []int) {
+	return file_orbital_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ProgramUpdate) GetState() *ProgramState {
+	if x != nil {
+		return x.State
+	}
+	return nil
+}
+
+func (x *ProgramUpdate) GetNote() string {
+	if x != nil {
+		return x.Note
+	}
+	return ""
+}
+
 type Error struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
@@ -937,7 +1333,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_orbital_proto_msgTypes[14]
+	mi := &file_orbital_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -949,7 +1345,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_orbital_proto_msgTypes[14]
+	mi := &file_orbital_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -962,7 +1358,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_orbital_proto_rawDescGZIP(), []int{14}
+	return file_orbital_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Error) GetText() string {
@@ -986,6 +1382,8 @@ type Envelope struct {
 	//	*Envelope_SeatRelease
 	//	*Envelope_Roster
 	//	*Envelope_Error
+	//	*Envelope_ProgramEvent
+	//	*Envelope_ProgramUpdate
 	Msg           isEnvelope_Msg `protobuf_oneof:"msg"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -993,7 +1391,7 @@ type Envelope struct {
 
 func (x *Envelope) Reset() {
 	*x = Envelope{}
-	mi := &file_orbital_proto_msgTypes[15]
+	mi := &file_orbital_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1005,7 +1403,7 @@ func (x *Envelope) String() string {
 func (*Envelope) ProtoMessage() {}
 
 func (x *Envelope) ProtoReflect() protoreflect.Message {
-	mi := &file_orbital_proto_msgTypes[15]
+	mi := &file_orbital_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1018,7 +1416,7 @@ func (x *Envelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Envelope.ProtoReflect.Descriptor instead.
 func (*Envelope) Descriptor() ([]byte, []int) {
-	return file_orbital_proto_rawDescGZIP(), []int{15}
+	return file_orbital_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Envelope) GetMsg() isEnvelope_Msg {
@@ -1118,6 +1516,24 @@ func (x *Envelope) GetError() *Error {
 	return nil
 }
 
+func (x *Envelope) GetProgramEvent() *ProgramEvent {
+	if x != nil {
+		if x, ok := x.Msg.(*Envelope_ProgramEvent); ok {
+			return x.ProgramEvent
+		}
+	}
+	return nil
+}
+
+func (x *Envelope) GetProgramUpdate() *ProgramUpdate {
+	if x != nil {
+		if x, ok := x.Msg.(*Envelope_ProgramUpdate); ok {
+			return x.ProgramUpdate
+		}
+	}
+	return nil
+}
+
 type isEnvelope_Msg interface {
 	isEnvelope_Msg()
 }
@@ -1162,6 +1578,14 @@ type Envelope_Error struct {
 	Error *Error `protobuf:"bytes,10,opt,name=error,proto3,oneof"`
 }
 
+type Envelope_ProgramEvent struct {
+	ProgramEvent *ProgramEvent `protobuf:"bytes,11,opt,name=program_event,json=programEvent,proto3,oneof"`
+}
+
+type Envelope_ProgramUpdate struct {
+	ProgramUpdate *ProgramUpdate `protobuf:"bytes,12,opt,name=program_update,json=programUpdate,proto3,oneof"`
+}
+
 func (*Envelope_Join) isEnvelope_Msg() {}
 
 func (*Envelope_JoinAck) isEnvelope_Msg() {}
@@ -1182,6 +1606,10 @@ func (*Envelope_Roster) isEnvelope_Msg() {}
 
 func (*Envelope_Error) isEnvelope_Msg() {}
 
+func (*Envelope_ProgramEvent) isEnvelope_Msg() {}
+
+func (*Envelope_ProgramUpdate) isEnvelope_Msg() {}
+
 type Datagram struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           []byte                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                              // JoinAck.udp_key; empty on server-to-client datagrams
@@ -1192,7 +1620,7 @@ type Datagram struct {
 
 func (x *Datagram) Reset() {
 	*x = Datagram{}
-	mi := &file_orbital_proto_msgTypes[16]
+	mi := &file_orbital_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1204,7 +1632,7 @@ func (x *Datagram) String() string {
 func (*Datagram) ProtoMessage() {}
 
 func (x *Datagram) ProtoReflect() protoreflect.Message {
-	mi := &file_orbital_proto_msgTypes[16]
+	mi := &file_orbital_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1217,7 +1645,7 @@ func (x *Datagram) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Datagram.ProtoReflect.Descriptor instead.
 func (*Datagram) Descriptor() ([]byte, []int) {
-	return file_orbital_proto_rawDescGZIP(), []int{16}
+	return file_orbital_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Datagram) GetKey() []byte {
@@ -1242,14 +1670,15 @@ const file_orbital_proto_rawDesc = "" +
 	"\x05Vec3d\x12\f\n" +
 	"\x01x\x18\x01 \x01(\x01R\x01x\x12\f\n" +
 	"\x01y\x18\x02 \x01(\x01R\x01y\x12\f\n" +
-	"\x01z\x18\x03 \x01(\x01R\x01z\"\x91\x01\n" +
+	"\x01z\x18\x03 \x01(\x01R\x01z\"\xa5\x01\n" +
 	"\bRailShip\x12\x17\n" +
 	"\aship_id\x18\x01 \x01(\x04R\x06shipId\x12*\n" +
 	"\bposition\x18\x02 \x01(\v2\x0e.orbital.Vec3dR\bposition\x12*\n" +
 	"\bvelocity\x18\x03 \x01(\v2\x0e.orbital.Vec3dR\bvelocity\x12\x14\n" +
-	"\x05epoch\x18\x04 \x01(\x01R\x05epoch\"\x1c\n" +
+	"\x05epoch\x18\x04 \x01(\x01R\x05epoch\x12\x12\n" +
+	"\x04body\x18\x05 \x01(\tR\x04body\"\x1c\n" +
 	"\x04Join\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"\xc6\x01\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"\xf7\x01\n" +
 	"\aJoinAck\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x16\n" +
@@ -1258,7 +1687,8 @@ const file_orbital_proto_rawDesc = "" +
 	"\n" +
 	"world_time\x18\x05 \x01(\x01R\tworldTime\x12\x17\n" +
 	"\audp_key\x18\x06 \x01(\fR\x06udpKey\x121\n" +
-	"\bsnapshot\x18\a \x01(\v2\x15.orbital.HostSnapshotR\bsnapshot\";\n" +
+	"\bsnapshot\x18\a \x01(\v2\x15.orbital.HostSnapshotR\bsnapshot\x12/\n" +
+	"\aprogram\x18\b \x01(\v2\x15.orbital.ProgramStateR\aprogram\";\n" +
 	"\x04Ping\x12\x14\n" +
 	"\x05nonce\x18\x01 \x01(\x04R\x05nonce\x12\x1d\n" +
 	"\n" +
@@ -1300,9 +1730,33 @@ const file_orbital_proto_rawDesc = "" +
 	"\x04host\x18\x02 \x01(\tR\x04host\x12#\n" +
 	"\x05ships\x18\x03 \x03(\v2\r.orbital.ShipR\x05ships\x12\x1d\n" +
 	"\n" +
-	"world_time\x18\x04 \x01(\x01R\tworldTime\"\x1b\n" +
+	"world_time\x18\x04 \x01(\x01R\tworldTime\"\x8c\x01\n" +
+	"\fProgramState\x12\x0e\n" +
+	"\x02rp\x18\x01 \x01(\rR\x02rp\x12\x1a\n" +
+	"\bunlocked\x18\x02 \x03(\tR\bunlocked\x12\x1e\n" +
+	"\n" +
+	"milestones\x18\x03 \x03(\tR\n" +
+	"milestones\x12\x16\n" +
+	"\x06claims\x18\x04 \x03(\tR\x06claims\x12\x18\n" +
+	"\aversion\x18\x05 \x01(\x04R\aversion\"\xa7\x01\n" +
+	"\fProgramEvent\x12-\n" +
+	"\x05award\x18\x01 \x01(\v2\x15.orbital.ProgramAwardH\x00R\x05award\x120\n" +
+	"\x06unlock\x18\x02 \x01(\v2\x16.orbital.ProgramUnlockH\x00R\x06unlock\x12-\n" +
+	"\x05claim\x18\x03 \x01(\v2\x15.orbital.ProgramClaimH\x00R\x05claimB\a\n" +
+	"\x05event\"8\n" +
+	"\fProgramAward\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x16\n" +
+	"\x06points\x18\x02 \x01(\rR\x06points\"7\n" +
+	"\rProgramUnlock\x12\x12\n" +
+	"\x04part\x18\x01 \x01(\tR\x04part\x12\x12\n" +
+	"\x04cost\x18\x02 \x01(\rR\x04cost\"*\n" +
+	"\fProgramClaim\x12\x1a\n" +
+	"\bresource\x18\x01 \x01(\tR\bresource\"P\n" +
+	"\rProgramUpdate\x12+\n" +
+	"\x05state\x18\x01 \x01(\v2\x15.orbital.ProgramStateR\x05state\x12\x12\n" +
+	"\x04note\x18\x02 \x01(\tR\x04note\"\x1b\n" +
 	"\x05Error\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text\"\xe8\x03\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\"\xe7\x04\n" +
 	"\bEnvelope\x12#\n" +
 	"\x04join\x18\x01 \x01(\v2\r.orbital.JoinH\x00R\x04join\x12-\n" +
 	"\bjoin_ack\x18\x02 \x01(\v2\x10.orbital.JoinAckH\x00R\ajoinAck\x12#\n" +
@@ -1316,7 +1770,9 @@ const file_orbital_proto_rawDesc = "" +
 	"\fseat_release\x18\b \x01(\v2\x14.orbital.SeatReleaseH\x00R\vseatRelease\x12)\n" +
 	"\x06roster\x18\t \x01(\v2\x0f.orbital.RosterH\x00R\x06roster\x12&\n" +
 	"\x05error\x18\n" +
-	" \x01(\v2\x0e.orbital.ErrorH\x00R\x05errorB\x05\n" +
+	" \x01(\v2\x0e.orbital.ErrorH\x00R\x05error\x12<\n" +
+	"\rprogram_event\x18\v \x01(\v2\x15.orbital.ProgramEventH\x00R\fprogramEvent\x12?\n" +
+	"\x0eprogram_update\x18\f \x01(\v2\x16.orbital.ProgramUpdateH\x00R\rprogramUpdateB\x05\n" +
 	"\x03msg\"O\n" +
 	"\bDatagram\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\fR\x03key\x121\n" +
@@ -1342,57 +1798,70 @@ func file_orbital_proto_rawDescGZIP() []byte {
 }
 
 var file_orbital_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_orbital_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_orbital_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_orbital_proto_goTypes = []any{
-	(CrewRole)(0),        // 0: orbital.CrewRole
-	(*Vec3D)(nil),        // 1: orbital.Vec3d
-	(*RailShip)(nil),     // 2: orbital.RailShip
-	(*Join)(nil),         // 3: orbital.Join
-	(*JoinAck)(nil),      // 4: orbital.JoinAck
-	(*Ping)(nil),         // 5: orbital.Ping
-	(*Pong)(nil),         // 6: orbital.Pong
-	(*ShipState)(nil),    // 7: orbital.ShipState
-	(*HostSnapshot)(nil), // 8: orbital.HostSnapshot
-	(*HostChange)(nil),   // 9: orbital.HostChange
-	(*SeatClaim)(nil),    // 10: orbital.SeatClaim
-	(*SeatRelease)(nil),  // 11: orbital.SeatRelease
-	(*Seat)(nil),         // 12: orbital.Seat
-	(*Ship)(nil),         // 13: orbital.Ship
-	(*Roster)(nil),       // 14: orbital.Roster
-	(*Error)(nil),        // 15: orbital.Error
-	(*Envelope)(nil),     // 16: orbital.Envelope
-	(*Datagram)(nil),     // 17: orbital.Datagram
+	(CrewRole)(0),         // 0: orbital.CrewRole
+	(*Vec3D)(nil),         // 1: orbital.Vec3d
+	(*RailShip)(nil),      // 2: orbital.RailShip
+	(*Join)(nil),          // 3: orbital.Join
+	(*JoinAck)(nil),       // 4: orbital.JoinAck
+	(*Ping)(nil),          // 5: orbital.Ping
+	(*Pong)(nil),          // 6: orbital.Pong
+	(*ShipState)(nil),     // 7: orbital.ShipState
+	(*HostSnapshot)(nil),  // 8: orbital.HostSnapshot
+	(*HostChange)(nil),    // 9: orbital.HostChange
+	(*SeatClaim)(nil),     // 10: orbital.SeatClaim
+	(*SeatRelease)(nil),   // 11: orbital.SeatRelease
+	(*Seat)(nil),          // 12: orbital.Seat
+	(*Ship)(nil),          // 13: orbital.Ship
+	(*Roster)(nil),        // 14: orbital.Roster
+	(*ProgramState)(nil),  // 15: orbital.ProgramState
+	(*ProgramEvent)(nil),  // 16: orbital.ProgramEvent
+	(*ProgramAward)(nil),  // 17: orbital.ProgramAward
+	(*ProgramUnlock)(nil), // 18: orbital.ProgramUnlock
+	(*ProgramClaim)(nil),  // 19: orbital.ProgramClaim
+	(*ProgramUpdate)(nil), // 20: orbital.ProgramUpdate
+	(*Error)(nil),         // 21: orbital.Error
+	(*Envelope)(nil),      // 22: orbital.Envelope
+	(*Datagram)(nil),      // 23: orbital.Datagram
 }
 var file_orbital_proto_depIdxs = []int32{
 	1,  // 0: orbital.RailShip.position:type_name -> orbital.Vec3d
 	1,  // 1: orbital.RailShip.velocity:type_name -> orbital.Vec3d
 	8,  // 2: orbital.JoinAck.snapshot:type_name -> orbital.HostSnapshot
-	1,  // 3: orbital.ShipState.position:type_name -> orbital.Vec3d
-	1,  // 4: orbital.ShipState.velocity:type_name -> orbital.Vec3d
-	2,  // 5: orbital.HostSnapshot.rails:type_name -> orbital.RailShip
-	8,  // 6: orbital.HostChange.snapshot:type_name -> orbital.HostSnapshot
-	0,  // 7: orbital.SeatClaim.role:type_name -> orbital.CrewRole
-	0,  // 8: orbital.Seat.role:type_name -> orbital.CrewRole
-	12, // 9: orbital.Ship.seats:type_name -> orbital.Seat
-	2,  // 10: orbital.Ship.rails:type_name -> orbital.RailShip
-	7,  // 11: orbital.Ship.last:type_name -> orbital.ShipState
-	13, // 12: orbital.Roster.ships:type_name -> orbital.Ship
-	3,  // 13: orbital.Envelope.join:type_name -> orbital.Join
-	4,  // 14: orbital.Envelope.join_ack:type_name -> orbital.JoinAck
-	5,  // 15: orbital.Envelope.ping:type_name -> orbital.Ping
-	6,  // 16: orbital.Envelope.pong:type_name -> orbital.Pong
-	8,  // 17: orbital.Envelope.host_snapshot:type_name -> orbital.HostSnapshot
-	9,  // 18: orbital.Envelope.host_change:type_name -> orbital.HostChange
-	10, // 19: orbital.Envelope.seat_claim:type_name -> orbital.SeatClaim
-	11, // 20: orbital.Envelope.seat_release:type_name -> orbital.SeatRelease
-	14, // 21: orbital.Envelope.roster:type_name -> orbital.Roster
-	15, // 22: orbital.Envelope.error:type_name -> orbital.Error
-	7,  // 23: orbital.Datagram.ship_state:type_name -> orbital.ShipState
-	24, // [24:24] is the sub-list for method output_type
-	24, // [24:24] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	15, // 3: orbital.JoinAck.program:type_name -> orbital.ProgramState
+	1,  // 4: orbital.ShipState.position:type_name -> orbital.Vec3d
+	1,  // 5: orbital.ShipState.velocity:type_name -> orbital.Vec3d
+	2,  // 6: orbital.HostSnapshot.rails:type_name -> orbital.RailShip
+	8,  // 7: orbital.HostChange.snapshot:type_name -> orbital.HostSnapshot
+	0,  // 8: orbital.SeatClaim.role:type_name -> orbital.CrewRole
+	0,  // 9: orbital.Seat.role:type_name -> orbital.CrewRole
+	12, // 10: orbital.Ship.seats:type_name -> orbital.Seat
+	2,  // 11: orbital.Ship.rails:type_name -> orbital.RailShip
+	7,  // 12: orbital.Ship.last:type_name -> orbital.ShipState
+	13, // 13: orbital.Roster.ships:type_name -> orbital.Ship
+	17, // 14: orbital.ProgramEvent.award:type_name -> orbital.ProgramAward
+	18, // 15: orbital.ProgramEvent.unlock:type_name -> orbital.ProgramUnlock
+	19, // 16: orbital.ProgramEvent.claim:type_name -> orbital.ProgramClaim
+	15, // 17: orbital.ProgramUpdate.state:type_name -> orbital.ProgramState
+	3,  // 18: orbital.Envelope.join:type_name -> orbital.Join
+	4,  // 19: orbital.Envelope.join_ack:type_name -> orbital.JoinAck
+	5,  // 20: orbital.Envelope.ping:type_name -> orbital.Ping
+	6,  // 21: orbital.Envelope.pong:type_name -> orbital.Pong
+	8,  // 22: orbital.Envelope.host_snapshot:type_name -> orbital.HostSnapshot
+	9,  // 23: orbital.Envelope.host_change:type_name -> orbital.HostChange
+	10, // 24: orbital.Envelope.seat_claim:type_name -> orbital.SeatClaim
+	11, // 25: orbital.Envelope.seat_release:type_name -> orbital.SeatRelease
+	14, // 26: orbital.Envelope.roster:type_name -> orbital.Roster
+	21, // 27: orbital.Envelope.error:type_name -> orbital.Error
+	16, // 28: orbital.Envelope.program_event:type_name -> orbital.ProgramEvent
+	20, // 29: orbital.Envelope.program_update:type_name -> orbital.ProgramUpdate
+	7,  // 30: orbital.Datagram.ship_state:type_name -> orbital.ShipState
+	31, // [31:31] is the sub-list for method output_type
+	31, // [31:31] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_orbital_proto_init() }
@@ -1401,6 +1870,11 @@ func file_orbital_proto_init() {
 		return
 	}
 	file_orbital_proto_msgTypes[15].OneofWrappers = []any{
+		(*ProgramEvent_Award)(nil),
+		(*ProgramEvent_Unlock)(nil),
+		(*ProgramEvent_Claim)(nil),
+	}
+	file_orbital_proto_msgTypes[21].OneofWrappers = []any{
 		(*Envelope_Join)(nil),
 		(*Envelope_JoinAck)(nil),
 		(*Envelope_Ping)(nil),
@@ -1411,6 +1885,8 @@ func file_orbital_proto_init() {
 		(*Envelope_SeatRelease)(nil),
 		(*Envelope_Roster)(nil),
 		(*Envelope_Error)(nil),
+		(*Envelope_ProgramEvent)(nil),
+		(*Envelope_ProgramUpdate)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1418,7 +1894,7 @@ func file_orbital_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_orbital_proto_rawDesc), len(file_orbital_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   17,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -77,6 +77,18 @@ fn rust_client_against_go_server() {
         w.peers.get(&id).is_some_and(|s| s.pilot == "ann")
     });
 
+    // Shared research: the same milestone from both players is paid once, and points are spent once.
+    a.award("orbit", 100).unwrap();
+    b.award("orbit", 100).unwrap();
+    wait(&b, &mut wb, "shared award", |w| w.program.milestones.len() == 1);
+    wait(&a, &mut wa, "shared award on a", |w| w.program.rp == 100);
+    b.unlock("vector", 40).unwrap();
+    wait(&a, &mut wa, "shared unlock", |w| w.program.unlocked == ["vector"]);
+    assert_eq!(wa.program.rp, 60);
+    let mut prog = orbital_client::progress::Progress::new();
+    prog.apply_shared(wa.program.rp, &wa.program.unlocked, &wa.program.milestones, &wa.program.claims);
+    assert!(prog.has("vector") && prog.rp == 60);
+
     drop(a); // host leaves abruptly; its orbiting ship goes on rails
     wait(&b, &mut wb, "handoff", |w| w.is_host() && w.roster.ships.iter().any(|s| s.rails.is_some()));
     let others = wb.others();

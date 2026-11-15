@@ -258,3 +258,68 @@ func TestEndedFlightRemovesGroundedShip(t *testing.T) {
 	a.send(&pb.Envelope{Msg: &pb.Envelope_SeatRelease{SeatRelease: &pb.SeatRelease{ShipId: 1}}})
 	a.roster(func(r *pb.Roster) bool { return len(r.Ships) == 0 })
 }
+
+func progressEvent(ev *pb.ProgramEvent) *pb.Envelope {
+	return &pb.Envelope{Msg: &pb.Envelope_ProgramEvent{ProgramEvent: ev}}
+}
+
+func award(key string, pts uint32) *pb.Envelope {
+	return progressEvent(&pb.ProgramEvent{Event: &pb.ProgramEvent_Award{Award: &pb.ProgramAward{Key: key, Points: pts}}})
+}
+
+func unlock(part string, cost uint32) *pb.Envelope {
+	return progressEvent(&pb.ProgramEvent{Event: &pb.ProgramEvent_Unlock{Unlock: &pb.ProgramUnlock{Part: part, Cost: cost}}})
+}
+
+func (c *tclient) program(ok func(*pb.ProgramState) bool) *pb.ProgramState {
+	c.t.Helper()
+	return c.await("program update", func(e *pb.Envelope) bool {
+		return e.GetProgramUpdate() != nil && ok(e.GetProgramUpdate().State)
+	}).GetProgramUpdate().State
+}
+
+func TestSharedProgram(t *testing.T) {
+	sess := session.New()
+	s, err := Listen(Config{TCPAddr: "127.0.0.1:0", UDPAddr: "127.0.0.1:0", PingInterval: time.Second, Session: sess})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Serve()
+	defer s.Close()
+	ann := dial(t, s, sess.IssueToken("ann"))
+	bob := dial(t, s, sess.IssueToken("bob"))
+
+	// The same first milestone, reported by both players, is paid once.
+	ann.send(award("orbit", 100))
+	bob.send(award("orbit", 100))
+	ann.send(award("station", 150))
+	st := bob.program(func(p *pb.ProgramState) bool { return len(p.Milestones) == 2 })
+	if st.Rp != 250 {
+		t.Fatalf("rp %d, want 250", st.Rp)
+	}
+
+	// Points are shared and spent once: two players cannot both buy with the same points.
+	ann.send(unlock("dock1", 200))
+	st = bob.program(func(p *pb.ProgramState) bool { return len(p.Unlocked) == 1 })
+	bob.send(unlock("hab1", 100)) // only 50 left
+	bob.await("unaffordable error", func(e *pb.Envelope) bool { return e.GetError() != nil })
+	if st.Rp != 50 || st.Unlocked[0] != "dock1" {
+		t.Fatalf("state %v", st)
+	}
+	ann.send(unlock("dock1", 0))
+	ann.await("already unlocked error", func(e *pb.Envelope) bool { return e.GetError() != nil })
+
+	// A claim is shared, and an absurd award is refused.
+	bob.send(progressEvent(&pb.ProgramEvent{Event: &pb.ProgramEvent_Claim{Claim: &pb.ProgramClaim{Resource: "water_ice"}}}))
+	ann.program(func(p *pb.ProgramState) bool { return len(p.Claims) == 1 })
+	ann.send(award("cheat", 1_000_000))
+	ann.await("bad award error", func(e *pb.Envelope) bool { return e.GetError() != nil })
+
+	// A late joiner starts from the shared state.
+	cy := dial(t, s, sess.IssueToken("cy"))
+	ack := cy.await("join ack", func(e *pb.Envelope) bool { return e.GetJoinAck() != nil }).GetJoinAck()
+	p := ack.GetProgram()
+	if p.GetRp() != 50 || len(p.GetClaims()) != 1 || len(p.GetUnlocked()) != 1 || len(p.GetMilestones()) != 2 {
+		t.Fatalf("late joiner saw %v", p)
+	}
+}

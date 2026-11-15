@@ -87,6 +87,23 @@ impl Progress {
         Some(format!("+{pts} first {label}"))
     }
 
+    /// Take on the group's shared research as told by the server: the server's totals win, and
+    /// anything it knows that we do not is added. Free starting parts stay unlocked.
+    pub fn apply_shared(&mut self, rp: u32, unlocked: &[String], milestones: &[String], claims: &[String]) {
+        self.rp = rp;
+        for u in unlocked {
+            self.unlocked.insert(u.clone());
+        }
+        for m in milestones {
+            if !self.milestones.iter().any(|k| *k == m.as_str()) {
+                self.milestones.insert(Box::leak(m.clone().into_boxed_str()));
+            }
+        }
+        for c in claims {
+            self.claims.insert(c.clone());
+        }
+    }
+
     /// Record claims; returns the ones that were new.
     pub fn claim_all(&mut self, resources: &[&str]) -> Vec<String> {
         resources.iter().filter(|r| self.claims.insert(r.to_string())).map(|r| r.to_string()).collect()
@@ -131,6 +148,16 @@ impl Progress {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_state_replaces_points_and_adds_the_rest() {
+        let mut p = Progress::new();
+        p.rp = 7;
+        p.apply_shared(120, &["vector".into()], &["orbit".into(), "orbit".into()], &["water_ice".into()]);
+        assert_eq!((p.rp, p.has("vector"), p.era(), p.claims.len()), (120, true, 5, 1));
+        assert!(p.has("spark"));
+        assert_eq!(p.milestones.len(), 1);
+    }
 
     #[test]
     fn start_unlocks_and_costs() {
