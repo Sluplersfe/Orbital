@@ -18,7 +18,7 @@ cd server && go run ./cmd/orbital-server token ann   # trust a player, prints th
 cd server && go run ./cmd/orbital-server             # serves TCP 4004 and UDP 4005
 
 # Co-op client
-ORBITAL_SERVER=127.0.0.1 ORBITAL_TOKEN=<token> cargo run   # in client/
+ORBITAL_SERVER=127.0.0.1 ORBITAL_TOKEN=<token> cargo run   # in client/ (optional ORBITAL_NAME=<name>; press M for mission control)
 
 # Tests (the Rust co-op test runs against server/bin/orbital-server when it is built)
 cd server && go test -race ./... && go build -o bin/orbital-server ./cmd/orbital-server
