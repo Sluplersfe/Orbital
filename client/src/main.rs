@@ -1,6 +1,6 @@
 //! Orbital client, phase 2: single-player slice (builder, cockpit, flight report, research).
 use bevy::prelude::*;
-use orbital_client::parts::{self, CATALOG};
+use orbital_client::parts;
 use orbital_client::progress::{Progress, ERA_NAMES};
 use orbital_client::report::FlightReport;
 use orbital_client::sim::{Flight, Status};
@@ -88,7 +88,7 @@ fn setup(mut commands: Commands) {
 }
 
 fn unlocked_parts(g: &Game) -> Vec<&'static parts::Part> {
-    CATALOG.iter().filter(|p| g.progress.has(p.id)).collect()
+    parts::catalog().iter().filter(|p| g.progress.has(p.id) && p.placeable()).collect()
 }
 
 fn input(keys: Res<ButtonInput<KeyCode>>, mut g: ResMut<Game>, online: Option<Res<Online>>) {
@@ -132,14 +132,13 @@ fn input(keys: Res<ButtonInput<KeyCode>>, mut g: ResMut<Game>, online: Option<Re
             }
         }
         Mode::Research => {
-            let locked: Vec<_> = CATALOG.iter().filter(|p| !g.progress.has(p.id)).collect();
+            let locked: Vec<_> = parts::catalog().iter().filter(|p| !g.progress.has(p.id)).collect();
             if pressed(KeyCode::ArrowDown) && !locked.is_empty() { g.pick = (g.pick + 1) % locked.len(); }
             if pressed(KeyCode::ArrowUp) && !locked.is_empty() { g.pick = (g.pick + locked.len() - 1) % locked.len(); }
             if pressed(KeyCode::Enter) {
                 if let Some(p) = locked.get(g.pick) {
                     g.note = if g.progress.unlock(p.id) { format!("Unlocked {}.", p.name) }
-                        else if p.era > g.progress.era() { format!("{} belongs to era {}: finish the era {} goal first.", p.name, p.era, g.progress.era()) }
-                        else { format!("Need {} research points.", p.cost_rp) };
+                        else { g.progress.blocker(p.id).unwrap_or_default() };
                 }
             }
             if pressed(KeyCode::Escape) || pressed(KeyCode::KeyR) { g.mode = Mode::Builder; g.pick = 0; }
@@ -262,7 +261,7 @@ fn builder_text(g: &Game) -> String {
 
 fn research_text(g: &Game) -> String {
     let mut s = format!("RESEARCH   Points: {}   Era {}\n\nLocked parts (Up/Down, Enter to unlock, Esc back):\n", g.progress.rp, g.progress.era());
-    for (i, p) in CATALOG.iter().filter(|p| !g.progress.has(p.id)).enumerate() {
+    for (i, p) in parts::catalog().iter().filter(|p| !g.progress.has(p.id)).enumerate() {
         s += &format!(" {} {:<16} era {}  {:>3} RP\n", if i == g.pick { ">" } else { " " }, p.name, p.era, p.cost_rp);
     }
     s += "\nEarn points: first liftoff, 30 km, space, recovery from space, orbit, and every flight returns data.\n";

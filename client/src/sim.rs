@@ -1,8 +1,9 @@
 //! 64-bit flight simulation: thrust, gravity, atmosphere, drag, staging, max-Q, landing.
+use crate::bodies::{self, Body};
 use crate::orbit::Elements;
 use crate::parts::Kind;
 use crate::vessel::Vessel;
-use crate::{ATMO_TOP, G0, MU, R_EARTH, RHO0, SCALE_H, SPACE_ALT};
+use crate::G0;
 use bevy::math::DVec3;
 
 pub const OMEGA: f64 = 7.2921159e-5;
@@ -48,6 +49,9 @@ pub struct Event {
 
 #[derive(Debug, Clone)]
 pub struct Flight {
+    pub body: &'static Body,
+    /// True when the flight began in orbit rather than on the pad.
+    pub from_orbit: bool,
     pub vessel: Vessel,
     pub status: Status,
     pub t: f64,
@@ -78,26 +82,47 @@ pub struct Flight {
 }
 
 impl Flight {
+    /// Launch from the Earth pad at world time 0.
     pub fn new(vessel: Vessel) -> Self {
-        let pos = DVec3::new(R_EARTH, 0.0, 0.0);
+        Self::launch(vessel, 0.0)
+    }
+
+    /// Launch from the Earth pad at world time `world_time`: Earth has turned by then, so ships
+    /// launched at different times start in different places and share one inertial frame.
+    pub fn launch(vessel: Vessel, world_time: f64) -> Self {
+        let body = bodies::earth();
+        let theta = (body.omega * world_time) % std::f64::consts::TAU;
+        let pos = DVec3::new(theta.cos(), theta.sin(), 0.0) * body.radius;
         let prop = vessel.stage_prop(0);
+        Self::init(body, vessel, pos, DVec3::ZERO, 0, prop, true)
+    }
+
+    /// Start flying in space over `body` from an orbital state (a ship leaving a station, or one
+    /// arriving at the Moon). `stage` and `prop` say how much of the vessel is left.
+    pub fn in_space(body: &'static Body, vessel: Vessel, stage: usize, prop: f64, pos: DVec3, vel: DVec3) -> Self {
+        Self::init(body, vessel, pos, vel, stage, prop, false)
+    }
+
+    fn init(body: &'static Body, vessel: Vessel, pos: DVec3, vel: DVec3, stage: usize, prop: f64, pad: bool) -> Self {
         let mut f = Self {
-            vessel, status: Status::OnPad, t: 0.0, pos, vel: DVec3::ZERO, stage: 0, prop,
+            body, from_orbit: !pad, vessel, status: if pad { Status::OnPad } else { Status::Flying }, t: 0.0, pos, vel, stage, prop,
             throttle: 0.0, pitch_cmd: 0.0, pitch: 0.0, chute_deployed: false, chute_torn: false,
             max_alt: 0.0, max_speed: 0.0, max_q: 0.0, max_q_t: 0.0, max_q_alt: 0.0, dv_used: 0.0,
-            liftoff_twr: 0.0, reached_space: false, reached_orbit: false, impact_speed: None,
+            liftoff_twr: if pad { 0.0 } else { 1.0 }, reached_space: !pad, reached_orbit: false, impact_speed: None,
             events: vec![], samples: vec![], next_sample: 0.0,
         };
-        f.vel = f.ground_vel();
+        if pad {
+            f.vel = f.ground_vel();
+        }
         f
     }
 
     fn ground_vel(&self) -> DVec3 {
-        DVec3::Z.cross(self.pos) * OMEGA
+        DVec3::Z.cross(self.pos) * self.body.omega
     }
 
     pub fn alt(&self) -> f64 {
-        self.pos.length() - R_EARTH
+        self.pos.length() - self.body.radius
     }
 
     pub fn rel_vel(&self) -> DVec3 {
@@ -105,8 +130,8 @@ impl Flight {
     }
 
     pub fn density(&self) -> f64 {
-        let h = self.alt();
-        if h < ATMO_TOP { RHO0 * (-h.max(0.0) / SCALE_H).exp() } else { 0.0 }
+        let (h, b) = (self.alt(), self.body);
+        if b.has_atmosphere() && h < b.atmo_top { b.rho0 * (-h.max(0.0) / b.scale_h).exp() } else { 0.0 }
     }
 
     pub fn q(&self) -> f64 {
@@ -114,15 +139,15 @@ impl Flight {
     }
 
     pub fn elements(&self) -> Elements {
-        Elements::from_state(MU, self.pos, self.vel)
+        Elements::from_state(self.body.mu, self.pos, self.vel)
     }
 
     pub fn apo_alt(&self) -> f64 {
-        self.elements().apoapsis_r - R_EARTH
+        self.elements().apoapsis_r - self.body.radius
     }
 
     pub fn peri_alt(&self) -> f64 {
-        self.elements().periapsis_r - R_EARTH
+        self.elements().periapsis_r - self.body.radius
     }
 
     pub fn mass(&self) -> f64 {
@@ -226,7 +251,7 @@ impl Flight {
         let (t_kn, isp_sl, isp_vac) = self.vessel.stage_engines(self.stage);
         let mut thrust = 0.0;
         if self.throttle > 0.0 && t_kn > 0.0 && self.prop > 0.0 {
-            let pf = (-self.alt().max(0.0) / SCALE_H).exp();
+            let pf = if self.body.has_atmosphere() { (-self.alt().max(0.0) / self.body.scale_h).exp() } else { 0.0 };
             let isp = isp_vac + (isp_sl - isp_vac) * pf;
             thrust = t_kn * 1000.0 * self.throttle;
             let burn = thrust / (isp * G0) * dt;
@@ -258,7 +283,7 @@ impl Flight {
         let rho = self.density();
         let vr = self.rel_vel();
         let speed_r = vr.length();
-        let mut acc = -up * MU / (r * r) + dir * thrust / mass;
+        let mut acc = -up * self.body.mu / (r * r) + dir * thrust / mass;
         if rho > 0.0 && speed_r > 0.0 {
             let q = 0.5 * rho * speed_r * speed_r;
             let mut cda = self.vessel.cd() * REF_AREA;
@@ -289,11 +314,11 @@ impl Flight {
         }
         self.max_alt = self.max_alt.max(alt);
         self.max_speed = self.max_speed.max(self.rel_vel().length());
-        if !self.reached_space && alt >= SPACE_ALT {
+        if !self.reached_space && alt >= self.body.space_alt() {
             self.reached_space = true;
             self.log("Crossed the Karman line (100 km): in space");
         }
-        if !self.reached_orbit && self.peri_alt() >= ORBIT_PERIAPSIS && self.elements().energy < 0.0 {
+        if !self.reached_orbit && self.peri_alt() >= self.body.min_orbit_alt() && self.elements().energy < 0.0 {
             self.reached_orbit = true;
             self.log(format!("Stable orbit: {:.0} x {:.0} km", self.peri_alt() / 1e3, self.apo_alt() / 1e3));
         }
@@ -302,7 +327,7 @@ impl Flight {
             let el = self.elements();
             self.samples.push(Sample {
                 t: self.t, alt, speed, q, mass,
-                apo: el.apoapsis_r - R_EARTH, peri: el.periapsis_r - R_EARTH,
+                apo: el.apoapsis_r - self.body.radius, peri: el.periapsis_r - self.body.radius,
             });
         }
 
@@ -316,10 +341,10 @@ impl Flight {
         }
 
         // Ground contact
-        if self.pos.length() <= R_EARTH && self.t > 1.0 {
+        if self.pos.length() <= self.body.radius && self.t > 1.0 {
             let v = self.rel_vel().length();
             self.impact_speed = Some(v);
-            self.pos = up * R_EARTH;
+            self.pos = up * self.body.radius;
             if v <= SAFE_LANDING {
                 self.status = Status::Landed { speed: v };
                 self.log(format!("Touchdown at {:.1} m/s", v));
